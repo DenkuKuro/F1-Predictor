@@ -4,7 +4,9 @@
   "description": "Formula One Predictor game",
   "main": "index.js",
   "scripts": {
-    "dev": "npm run dev --prefix frontend",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && venv\\Scripts\\python.exe main.py",
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -17,5 +19,8 @@
   "bugs": {
     "url": "https://github.com/DenkuKuro/F1-Predictor/issues"
   },
-  "homepage": "https://github.com/DenkuKuro/F1-Predictor#readme"
+  "homepage": "https://github.com/DenkuKuro/F1-Predictor#readme",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
 }

@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request
+from database import supabase
 
 app = Flask(__name__)
 
@@ -25,7 +26,7 @@ def get_prediction_of_race():
 
 # A GET rout to get the current race data to perform predictions
 @app.route("/api/current_race", methods=['GET'])
-def get_prediction_of_race():
+def get_current_race():
     race_id = request.args.get('type')
     return 200
     
@@ -44,7 +45,19 @@ def signin():
     # add it to data base
     return 200
 
+@app.route('/api/teams', methods=['POST'])
+def insert_team():
+    content = request.json
+    team_name = content.get('team_name', '').strip()
 
+    if not team_name:
+        return jsonify({"error": "team_name is required"}), 400
+
+    try:
+        response = supabase.table("team").insert({"team_name": team_name}).execute()
+        return jsonify({"message": "Team inserted", "data": response.data}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     # debug=True allows for live-reloading during development
