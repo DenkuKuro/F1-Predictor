@@ -1,0 +1,21 @@
+{
+  "name": "f1-predictor",
+  "version": "1.0.0",
+  "description": "Formula One Predictor game",
+  "main": "index.js",
+  "scripts": {
+    "dev": "npm run dev --prefix frontend",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DenkuKuro/F1-Predictor.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/DenkuKuro/F1-Predictor/issues"
+  },
+  "homepage": "https://github.com/DenkuKuro/F1-Predictor#readme"
+}
