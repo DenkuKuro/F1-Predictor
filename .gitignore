@@ -1,3 +1,6 @@
+# --- General ---
+node_modules/
+
 # --- Python / Backend ---
 backend/venv/
 backend/__pycache__/
