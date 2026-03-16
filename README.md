@@ -1,6 +1,6 @@
 Formula One Predictor game
 
-**TO START DEV ENV**
+**TO START DEV ENV FOR WINDOWS**
 
 in root run ```npm run build```
 
