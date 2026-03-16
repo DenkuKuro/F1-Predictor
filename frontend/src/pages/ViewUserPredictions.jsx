@@ -1,8 +1,10 @@
-import React from 'react'
+import { useState } from 'react'
 
-const ViewUserPredictions = () => {
+function ViewUserPredictions() {
+
   return (
-    <div>ViewUserPredictions</div>
+    <>
+    </>
   )
 }
 

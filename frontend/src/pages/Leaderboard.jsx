@@ -1,8 +1,11 @@
-import React from 'react'
+import { useEffect, useState } from 'react'
 
-const Leaderboard = () => {
+function Leaderboard() {
+
+
   return (
-    <div>Leaderboard</div>
+    <>
+    </>
   )
 }
 
