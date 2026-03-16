@@ -11,7 +11,7 @@ function ViewPredictions() {
         setLoading(true)
         setError('')
 
-        const response = await fetch('http://127.0.0.1:5001/api/predictions')
+        const response = await fetch('/api/predictions')
 
         if (!response.ok) {
           throw new Error('Could not load predictions.')

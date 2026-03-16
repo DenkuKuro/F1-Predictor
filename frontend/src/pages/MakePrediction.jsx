@@ -25,8 +25,8 @@ function MakePrediction() {
         setError('')
 
         const [racesResponse, driversResponse] = await Promise.all([
-          fetch('http://127.0.0.1:5001/api/races'),
-          fetch('http://127.0.0.1:5001/api/drivers'),
+          fetch('/api/races'),
+          fetch('/api/drivers'),
         ])
 
         if (!racesResponse.ok || !driversResponse.ok) {
@@ -90,7 +90,7 @@ function MakePrediction() {
     try {
       setLoading(true)
 
-      const response = await fetch('http://127.0.0.1:5001/api/predict', {
+      const response = await fetch('/api/predict', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
