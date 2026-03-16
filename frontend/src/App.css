@@ -1,184 +1,404 @@
-.counter {
-  font-size: 16px;
-  padding: 5px 10px;
-  border-radius: 5px;
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 2px solid transparent;
-  transition: border-color 0.3s;
-  margin-bottom: 24px;
-
-  &:hover {
-    border-color: var(--accent-border);
-  }
-  &:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
+/* App shell layout styles */
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  background:
+    radial-gradient(circle at top right, rgba(225, 6, 0, 0.14), transparent 28%),
+    linear-gradient(135deg, #090909 0%, #151515 55%, #0b0b0b 100%);
+  color: #f5f5f5;
 }
 
-.hero {
-  position: relative;
-
-  .base,
-  .framework,
-  .vite {
-    inset-inline: 0;
-    margin: 0 auto;
-  }
-
-  .base {
-    width: 170px;
-    position: relative;
-    z-index: 0;
-  }
-
-  .framework,
-  .vite {
-    position: absolute;
-  }
-
-  .framework {
-    z-index: 1;
-    top: 34px;
-    height: 28px;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(44deg) rotateY(39deg)
-      scale(1.4);
-  }
-
-  .vite {
-    z-index: 0;
-    top: 107px;
-    height: 26px;
-    width: auto;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(40deg) rotateY(39deg)
-      scale(0.8);
-  }
-}
-
-#center {
+/* Sidebar and navbar styles */
+.sidebar {
+  padding: 32px 24px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(7, 7, 7, 0.88);
   display: flex;
   flex-direction: column;
-  gap: 25px;
-  place-content: center;
-  place-items: center;
-  flex-grow: 1;
-
-  @media (max-width: 1024px) {
-    padding: 32px 20px 24px;
-    gap: 18px;
-  }
+  gap: 24px;
 }
 
-#next-steps {
-  display: flex;
-  border-top: 1px solid var(--border);
+/* Shared heading text styles */
+.brand-block h1,
+.page-title,
+.hero-title,
+.content-card h3 {
+  margin: 0;
+}
+
+/* Shared label and helper text styles */
+.brand-kicker,
+.section-kicker,
+.eyebrow,
+.panel-label,
+.stat-label,
+.detail-label {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  color: #a0a0a0;
+}
+
+.brand-copy,
+.card-copy,
+.panel-note {
+  color: #b7b7b7;
+  line-height: 1.6;
+}
+
+.nav-list {
+  display: grid;
+  gap: 10px;
+}
+
+/* Navbar button styles */
+.nav-button {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: #f5f5f5;
+  border-radius: 14px;
+  padding: 14px 16px;
   text-align: left;
-
-  & > div {
-    flex: 1 1 0;
-    padding: 32px;
-    @media (max-width: 1024px) {
-      padding: 24px 20px;
-    }
-  }
-
-  .icon {
-    margin-bottom: 16px;
-    width: 22px;
-    height: 22px;
-  }
-
-  @media (max-width: 1024px) {
-    flex-direction: column;
-    text-align: center;
-  }
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
 
-#docs {
-  border-right: 1px solid var(--border);
-
-  @media (max-width: 1024px) {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
+.nav-button:hover,
+.nav-button.active {
+  transform: translateX(4px);
+  border-color: rgba(225, 6, 0, 0.8);
+  background: linear-gradient(90deg, rgba(225, 6, 0, 0.22), rgba(255, 255, 255, 0.04));
 }
 
-#next-steps ul {
-  list-style: none;
-  padding: 0;
+/* Shared card container styles */
+.sidebar-panel,
+.content-card,
+.hero-card {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 24px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.28);
+}
+
+/* Sidebar info panel styles */
+.sidebar-panel {
+  margin-top: auto;
+  padding: 18px;
+}
+
+.panel-value {
+  margin: 6px 0 10px;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+/* Main content and top bar styles */
+.main-content {
+  padding: 28px 32px 40px;
+}
+
+.topbar {
   display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.page-title {
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+}
+
+/* Top bar badge styles */
+.topbar-badge {
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
-  margin: 32px 0 0;
-
-  .logo {
-    height: 18px;
-  }
-
-  a {
-    color: var(--text-h);
-    font-size: 16px;
-    border-radius: 6px;
-    background: var(--social-bg);
-    display: flex;
-    padding: 6px 12px;
-    align-items: center;
-    gap: 8px;
-    text-decoration: none;
-    transition: box-shadow 0.3s;
-
-    &:hover {
-      box-shadow: var(--shadow);
-    }
-    .button-icon {
-      height: 18px;
-      width: 18px;
-    }
-  }
-
-  @media (max-width: 1024px) {
-    margin-top: 20px;
-    flex-wrap: wrap;
-    justify-content: center;
-
-    li {
-      flex: 1 1 calc(50% - 8px);
-    }
-
-    a {
-      width: 100%;
-      justify-content: center;
-      box-sizing: border-box;
-    }
-  }
+  padding: 10px 14px;
+  border-radius: 999px;
+  font-size: 0.86rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: #e5e5e5;
 }
 
-#spacer {
-  height: 88px;
-  border-top: 1px solid var(--border);
-  @media (max-width: 1024px) {
-    height: 48px;
-  }
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #ff453a;
+  box-shadow: 0 0 12px rgba(255, 69, 58, 0.8);
 }
 
-.ticks {
-  position: relative;
+/* Shared page section and content card spacing */
+.page-section {
+  display: grid;
+  gap: 24px;
+}
+
+.hero-card,
+.content-card {
+  padding: 28px;
+}
+
+/* Home page hero styles */
+.hero-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-end;
+  background:
+    linear-gradient(135deg, rgba(225, 6, 0, 0.18), rgba(255, 255, 255, 0.04)),
+    rgba(255, 255, 255, 0.03);
+}
+
+.hero-title {
+  font-size: clamp(1.9rem, 4vw, 3rem);
+  max-width: 12ch;
+}
+
+.hero-copy {
+  max-width: 60ch;
+  color: #d2d2d2;
+  line-height: 1.7;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Shared button styles */
+.primary-button,
+.secondary-button {
+  border: none;
+  border-radius: 14px;
+  padding: 14px 18px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.primary-button {
+  background: linear-gradient(135deg, #e10600, #ff5b51);
+  color: #ffffff;
+}
+
+.secondary-button {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.primary-button:hover,
+.secondary-button:hover {
+  transform: translateY(-1px);
+}
+
+.primary-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.full-width {
   width: 100%;
+}
 
-  &::before,
-  &::after {
-    content: '';
-    position: absolute;
-    top: -4.5px;
-    border: 5px solid transparent;
+/* Shared grid layout styles */
+.stats-grid,
+.dashboard-grid,
+.two-column-layout {
+  display: grid;
+  gap: 20px;
+}
+
+/* Dashboard and stat card styles */
+.stats-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.dashboard-grid,
+.two-column-layout {
+  grid-template-columns: 2fr 1fr;
+}
+
+/* Shared card content styles */
+.card-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.detail-list {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 20px;
+}
+
+/* Home page leaderboard highlight styles */
+.leader-highlight {
+  margin-top: 20px;
+  padding: 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.leader-points {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #ff6b63;
+}
+
+/* Form page styles: MakePrediction and LogIn */
+.form-card {
+  align-content: start;
+}
+
+.app-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.field-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #efefef;
+}
+
+.app-input {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(11, 11, 11, 0.9);
+  color: #f6f6f6;
+  font-size: 0.95rem;
+}
+
+.app-input:focus {
+  outline: none;
+  border-color: rgba(225, 6, 0, 0.9);
+  box-shadow: 0 0 0 3px rgba(225, 6, 0, 0.18);
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 4px;
+  color: #e6e6e6;
+}
+
+/* Shared status message styles */
+.feedback-message {
+  margin: 16px 0 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  font-weight: 600;
+}
+
+.feedback-message.success {
+  background: rgba(56, 161, 105, 0.16);
+  color: #84f1b3;
+}
+
+.feedback-message.error {
+  background: rgba(225, 6, 0, 0.18);
+  color: #ff9d97;
+}
+
+/* MakePrediction notes panel styles */
+.warning-copy {
+  margin-top: 20px;
+  padding: 16px;
+  border-left: 4px solid #e10600;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+/* Shared table styles: Leaderboard and ViewPredictions */
+.table-wrapper {
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table th,
+.data-table td {
+  padding: 14px 12px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.data-table th {
+  color: #bababa;
+  font-size: 0.84rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.data-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.empty-state {
+  margin-top: 16px;
+  color: #bdbdbd;
+}
+
+/* Narrow page width helper for LogIn */
+.narrow-layout {
+  max-width: 760px;
+}
+
+/* Tablet and small desktop responsive styles */
+@media (max-width: 1100px) {
+  .app-shell {
+    grid-template-columns: 1fr;
   }
 
-  &::before {
-    left: 0;
-    border-left-color: var(--border);
+  .sidebar {
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   }
-  &::after {
-    right: 0;
-    border-right-color: var(--border);
+
+  .sidebar-panel {
+    margin-top: 0;
+  }
+
+  .stats-grid,
+  .dashboard-grid,
+  .two-column-layout,
+  .detail-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Mobile responsive styles */
+@media (max-width: 720px) {
+  .main-content,
+  .sidebar {
+    padding: 22px 18px;
+  }
+
+  .topbar,
+  .hero-card,
+  .card-heading {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
