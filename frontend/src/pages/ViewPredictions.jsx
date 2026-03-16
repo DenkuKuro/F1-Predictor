@@ -45,7 +45,7 @@ function ViewPredictions() {
 
         {!loading && predictions.length === 0 && <p className="card-copy">No data available yet.</p>}
 
-        {!loading && (
+        {!loading && predictions.length > 0 && (
           <div className="table-wrapper">
             <table className="data-table">
               <thead>
