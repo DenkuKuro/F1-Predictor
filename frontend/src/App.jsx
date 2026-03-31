@@ -2,6 +2,7 @@ import { useState } from 'react'
 import './App.css'
 import Leaderboard from './pages/Leaderboard'
 import LogIn from './pages/LogIn'
+import SignIn from './pages/SignIn'
 import MakePrediction from './pages/MakePrediction'
 import ViewPredictions from './pages/ViewPredictions'
 import ViewUserPredictions from './pages/ViewUserPredictions'
@@ -12,6 +13,7 @@ const navigationItems = [
   { id: 'viewPredictions', label: 'View Predictions' },
   { id: 'myPredictions', label: 'My Predictions' },
   { id: 'login', label: 'Login' },
+  { id: 'signin', label: 'Sign In'}
 ]
 
 function App() {
@@ -27,6 +29,8 @@ function App() {
         return <ViewUserPredictions />
       case 'login':
         return <LogIn />
+      case 'signin':
+        return <SignIn />
       case 'leaderboard':
       default:
         return <Leaderboard />

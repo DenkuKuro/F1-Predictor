@@ -123,6 +123,31 @@ def insert_team():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+def check_user_exists(email):
+    try:
+        response = supabase.table("users").select("email", count="exact").eq("email", email.lower()).execute()
+        return response.count > 0
+    except Exception as e:
+        print("Error checking if user already exists: ", e)
+        return False
+                            
+
+
+# A POST route to sign in user and add it to the database
+@app.route("/api/sign-in", methods=["POST"])
+def signin():
+    content = request.json or {}
+    print(content)
+    if check_user_exists(content.get('email', '').strip()) is False:
+        try:
+            response = supabase.table("users").insert(content).execute()
+            return jsonify({"message": "Signed in successfully!", "data": response.data}), 201
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    else:
+        return jsonify({"message": "User already exists"}), 409
+    
+
 if __name__ == '__main__':
     # debug=True allows for live-reloading during development
     app.run(debug=True, port=5000)
