@@ -130,14 +130,11 @@ def check_user_exists(email):
     except Exception as e:
         print("Error checking if user already exists: ", e)
         return False
-                            
-
 
 # A POST route to sign in user and add it to the database
 @app.route("/api/sign-in", methods=["POST"])
 def signin():
     content = request.json or {}
-    print(content)
     if check_user_exists(content.get('email', '').strip()) is False:
         try:
             response = supabase.table("users").insert(content).execute()
@@ -147,6 +144,18 @@ def signin():
     else:
         return jsonify({"message": "User already exists"}), 409
     
+# A POST route to log in user and add it to the database
+@app.route("/api/login", methods=["POST"])
+def login():
+    content = request.json or {}
+    email = content.get("email", "").lower()
+    password = content.get("password", "").lower()
+    try:
+        response = supabase.table("users").select("*", count="exact").eq("email", email).eq("password", password).execute()
+        print(response)
+        return jsonify({"message": "Signed in successfully!", "data": response.data}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     # debug=True allows for live-reloading during development

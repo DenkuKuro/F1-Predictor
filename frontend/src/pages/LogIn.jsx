@@ -1,12 +1,13 @@
 import { useState } from 'react'
 
 function LogIn() {
+  const [userData, setUserData] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
     setError('')
     setSuccess('')
@@ -16,7 +17,30 @@ function LogIn() {
       return
     }
 
-    setSuccess('Login form submitted.')
+    const formData = {
+      email: email,
+      password: password
+    }
+
+    try {
+      const response = await fetch("/api/login", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData),
+        })
+      const data = await response.json()
+      if (response.ok) {
+          setSuccess(data.message)
+      } else {
+          setError(data.message)
+      }
+    } catch (error) {
+      console.error("Error: ", error)
+    }
+  }
+
+  const loadUserData = (userData) => {
+
   }
 
   return (
