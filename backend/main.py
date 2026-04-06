@@ -133,15 +133,15 @@ def check_user_exists(email):
                             
 
 
-# A POST route to sign in user and add it to the database
-@app.route("/api/sign-in", methods=["POST"])
-def signin():
+# A POST route to sign up a new user and add them to the database
+@app.route("/api/sign-up", methods=["POST"])
+def signup():
     content = request.json or {}
     print(content)
     if check_user_exists(content.get('email', '').strip()) is False:
         try:
             response = supabase.table("users").insert(content).execute()
-            return jsonify({"message": "Signed in successfully!", "data": response.data}), 201
+            return jsonify({"message": "Signed up successfully!", "data": response.data}), 201
         except Exception as e:
             return jsonify({"error": str(e)}), 500
     else:
