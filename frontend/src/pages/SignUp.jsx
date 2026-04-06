@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-function SignIn() {
+function SignUp() {
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -24,7 +24,7 @@ function SignIn() {
     }
     try {
 
-        const response = await fetch("/api/sign-in", {
+        const response = await fetch("/api/sign-up", {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(formData),
@@ -44,7 +44,7 @@ function SignIn() {
   return (
     <section className="page-section narrow-layout">
       <article className="content-card form-card">
-        <p className="section-kicker">Sign In</p>
+        <p className="section-kicker">Sign Up</p>
 
         <form className="app-form" onSubmit={handleSubmit}>
           <label className="field-label" htmlFor="username">
@@ -81,7 +81,7 @@ function SignIn() {
           />
 
           <button type="submit" className="primary-button full-width">
-            Sign In
+            Sign Up
           </button>
         </form>
 
@@ -92,4 +92,4 @@ function SignIn() {
   )
 }
 
-export default SignIn
+export default SignUp
