@@ -7,9 +7,11 @@ import MakePrediction from './pages/MakePrediction'
 import ViewPredictions from './pages/ViewPredictions'
 import ViewUserPredictions from './pages/ViewUserPredictions'
 import AboutTheRace from './pages/AboutTheRace'
+import RaceResults from './pages/RaceResults'
 
 const navigationItems = [
   { id: 'aboutRace', label: 'About The Race' },
+  { id: 'results', label: 'See Results'},
   { id: 'leaderboard', label: 'Leaderboard' },
   { id: 'makePrediction', label: 'Make Prediction' },
   { id: 'viewPredictions', label: 'View Predictions' },
@@ -47,6 +49,9 @@ function App() {
       case 'signup':
         return <SignUp />
       case 'leaderboard':
+        return <Leaderboard />
+      case 'results':
+        return <RaceResults />
       default:
         return <Leaderboard />
     }
