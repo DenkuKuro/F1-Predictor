@@ -153,9 +153,19 @@ def login():
     email = content.get("email", "").lower()
     password = content.get("password", "").lower()
     try:
-        response = supabase.table("users").select("*", count="exact").eq("email", email).eq("password", password).execute()
+        supabase.table("users").select("*", count="exact").eq("email", email).eq("password", password).execute()
+        response = (
+            supabase.table("users")
+            .select("user_id, username")
+            .eq("email", email)
+            .eq("password", password)
+            .execute()
+        )
         print(response)
-        return jsonify({"message": "Signed in successfully!", "data": response.data}), 201
+        if response.data: 
+            data = response.data[0]
+            return jsonify({"message": "Logged in successfully!", "body": data}), 201
+        return jsonify({"error": "No such user exists"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
