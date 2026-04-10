@@ -66,6 +66,23 @@ def get_predictions():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# A GET route to retrieve all predictions stored in the database
+@app.route('/api/user_predictions/<user_id>', methods=['GET'])
+def get_user_predictions(user_id):
+    try:
+        response = (
+            supabase
+            .table("prediction")
+            .select("pred_id, user_id, race_id, p1_pick, p2_pick, p3_pick, safety_car_prediction, points_earned")
+            .eq("user_id", user_id)
+            .order("pred_id")
+            .execute()
+        )
+        print(response)
+        return jsonify(response.data), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # A POST route to submit a new race prediction
 @app.route('/api/predict', methods=['POST'])
 def post_prediction():
@@ -132,14 +149,11 @@ def check_user_exists(email):
     except Exception as e:
         print("Error checking if user already exists: ", e)
         return False
-                            
-
 
 # A POST route to sign up a new user and add them to the database
 @app.route("/api/sign-up", methods=["POST"])
 def signup():
     content = request.json or {}
-    print(content)
     if check_user_exists(content.get('email', '').strip()) is False:
         try:
             response = supabase.table("users").insert(content).execute()
@@ -149,6 +163,28 @@ def signup():
     else:
         return jsonify({"message": "User already exists"}), 409
     
+# A POST route to log in user and add it to the database
+@app.route("/api/login", methods=["POST"])
+def login():
+    content = request.json or {}
+    email = content.get("email", "").lower()
+    password = content.get("password", "").lower()
+    try:
+        supabase.table("users").select("*", count="exact").eq("email", email).eq("password", password).execute()
+        response = (
+            supabase.table("users")
+            .select("user_id, username")
+            .eq("email", email)
+            .eq("password", password)
+            .execute()
+        )
+        print(response)
+        if response.data: 
+            data = response.data[0]
+            return jsonify({"message": "Logged in successfully!", "body": data}), 201
+        return jsonify({"error": "No such user exists"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # GET /api/live-race
 # Returns the current session's live state: top 3 positions, safety car status,
