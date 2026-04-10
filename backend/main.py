@@ -51,6 +51,32 @@ def get_races():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# A GET route to retrieve non-spoiler race info (details + entry list) from Jolpica
+# Query params: season, round
+@app.route('/api/race-info', methods=['GET'])
+def get_race_info():
+    season = request.args.get('season')
+    round_num = request.args.get('round')
+    if not season or not round_num:
+        return jsonify({"error": "season and round query params are required"}), 400
+    try:
+        details = jolpica.get_race_details(season, round_num)
+        if not details:
+            return jsonify({"error": "Race not found"}), 404
+        entry_list = jolpica.get_race_entry_list(season, round_num)
+        return jsonify({"details": details, "entry_list": entry_list}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# A GET route to retrieve up to 10 recent completed races from the Jolpica API
+@app.route('/api/recent-races', methods=['GET'])
+def get_recent_races():
+    try:
+        races = jolpica.get_recent_races(n=10)
+        return jsonify(races), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # A GET route to retrieve all predictions stored in the database
 @app.route('/api/predictions', methods=['GET'])
 def get_predictions():
