@@ -63,18 +63,15 @@ function App() {
           <p className="panel-label">Recent Races</p>
           <select
             className="app-input race-dropdown"
-            value={selectedRace ? `${selectedRace.season}-${selectedRace.round}` : ''}
+            value={selectedRace ? selectedRace.race_id : ''}
             onChange={(e) => {
-              const [season, round] = e.target.value.split('-')
-              const race = recentRaces.find(
-                (r) => String(r.season) === season && String(r.round) === round
-              )
+              const race = recentRaces.find((r) => String(r.race_id) === e.target.value)
               setSelectedRace(race ?? null)
             }}
           >
             <option value="">Select a race…</option>
             {recentRaces.map((race) => (
-              <option key={`${race.season}-${race.round}`} value={`${race.season}-${race.round}`}>
+              <option key={race.race_id} value={race.race_id}>
                 {race.name} — {race.date}
               </option>
             ))}

@@ -48,6 +48,26 @@ def get_recent_races(n=10):
     return races
 
 
+def get_current_season_drivers():
+    # Returns all drivers in the current season with their team name, from driver standings.
+    current_year = date.today().year
+    response = requests.get(f"{BASE_URL}/{current_year}/driverStandings.json")
+    response.raise_for_status()
+    lists = response.json()["MRData"]["StandingsTable"]["StandingsLists"]
+    if not lists:
+        return []
+    entries = []
+    for standing in lists[0]["DriverStandings"]:
+        driver = standing["Driver"]
+        team = standing["Constructors"][0]["name"] if standing["Constructors"] else None
+        entries.append({
+            "first_name": driver["givenName"],
+            "last_name": driver["familyName"],
+            "team_name": team,
+        })
+    return entries
+
+
 def get_race_details(season_year, round_num):
     # Returns race metadata: name, circuit, location, session schedule. No results.
     response = requests.get(f"{BASE_URL}/{season_year}/{round_num}.json")

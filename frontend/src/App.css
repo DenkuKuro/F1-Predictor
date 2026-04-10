@@ -379,6 +379,11 @@
   color: #bdbdbd;
 }
 
+.leaderboard-top td {
+  color: #ff6b63;
+  font-weight: 700;
+}
+
 /* Narrow page width helper for LogIn */
 .narrow-layout {
   max-width: 760px;

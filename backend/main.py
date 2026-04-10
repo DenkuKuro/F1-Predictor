@@ -51,29 +51,110 @@ def get_races():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# A GET route to retrieve non-spoiler race info (details + entry list) from Jolpica
-# Query params: season, round
+# A GET route to retrieve non-spoiler race info (details + entry list) from the DB
+# Query param: race_id
 @app.route('/api/race-info', methods=['GET'])
 def get_race_info():
-    season = request.args.get('season')
-    round_num = request.args.get('round')
-    if not season or not round_num:
-        return jsonify({"error": "season and round query params are required"}), 400
+    race_id = request.args.get('race_id')
+    if not race_id:
+        return jsonify({"error": "race_id query param is required"}), 400
     try:
-        details = jolpica.get_race_details(season, round_num)
-        if not details:
+        race_row = (
+            supabase.table("race")
+            .select("race_id, location, race_date, season_year")
+            .eq("race_id", race_id)
+            .execute()
+            .data
+        )
+        if not race_row:
             return jsonify({"error": "Race not found"}), 404
-        entry_list = jolpica.get_race_entry_list(season, round_num)
+        race = race_row[0]
+
+        # Compute round number by ordering all races in this season by date
+        season_races = (
+            supabase.table("race")
+            .select("race_id")
+            .eq("season_year", race["season_year"])
+            .order("race_date")
+            .execute()
+            .data
+        )
+        round_num = next(
+            (i + 1 for i, r in enumerate(season_races) if r["race_id"] == race["race_id"]),
+            None
+        )
+
+        details = {
+            "race_id": race["race_id"],
+            "season": race["season_year"],
+            "round": round_num,
+            "location": race["location"],
+            "date": race["race_date"],
+        }
+
+        # Fetch all drivers joined to their team names
+        drivers = (
+            supabase.table("driver")
+            .select("driver_id, first_name, last_name, team_id")
+            .order("last_name")
+            .execute()
+            .data
+        )
+        teams = supabase.table("team").select("team_id, team_name").execute().data
+        team_map = {t["team_id"]: t["team_name"] for t in teams}
+
+        entry_list = [
+            {
+                "driver_id": d["driver_id"],
+                "first_name": d["first_name"],
+                "last_name": d["last_name"],
+                "team_name": team_map.get(d["team_id"], "Unknown"),
+            }
+            for d in drivers
+        ]
+
         return jsonify({"details": details, "entry_list": entry_list}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# A GET route to retrieve up to 10 recent completed races from the Jolpica API
+# A GET route to retrieve the 10 most recent races from the database
 @app.route('/api/recent-races', methods=['GET'])
 def get_recent_races():
     try:
-        races = jolpica.get_recent_races(n=10)
+        response = (
+            supabase
+            .table("race")
+            .select("race_id, location, race_date, season_year")
+            .order("race_date", desc=True)
+            .limit(10)
+            .execute()
+        )
+        # Reshape to match the keys the frontend already expects from the old Jolpica response
+        races = [
+            {
+                "race_id": row["race_id"],
+                "season": row["season_year"],
+                "name": row["location"],
+                "location": row["location"],
+                "date": row["race_date"],
+            }
+            for row in response.data
+        ]
         return jsonify(races), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# A GET route to retrieve users sorted by total points descending
+@app.route('/api/leaderboard', methods=['GET'])
+def get_leaderboard():
+    try:
+        response = (
+            supabase.table("users")
+            .select("username, total_points")
+            .order("total_points", desc=True)
+            .execute()
+        )
+        return jsonify(response.data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -322,9 +403,8 @@ def calculate_scores():
         return jsonify({"error": str(e)}), 500
 
 # POST /api/calculate-scores/history
-# Scores predictions for a historical race using Jolpica results.
+# Scores predictions for a historical race using stored results from the race_result table.
 # Expects JSON body: { "race_id": <int> }
-# Safety car is not available from Jolpica — that point is skipped.
 @app.route("/api/calculate-scores/history", methods=["POST"])
 def calculate_scores_history():
     content = request.json or {}
@@ -334,65 +414,169 @@ def calculate_scores_history():
         return jsonify({"error": "race_id is required"}), 400
 
     try:
-        # Look up the race in our DB to get date and season
-        race_row = (
-            supabase.table("race")
-            .select("race_date, season_year")
+        result_row = (
+            supabase.table("race_result")
+            .select("p1_driver_id, p2_driver_id, p3_driver_id")
             .eq("race_id", race_id)
             .execute()
             .data
         )
-        if not race_row:
-            return jsonify({"error": f"No race found for race_id {race_id}"}), 404
+        if not result_row:
+            return jsonify({"error": f"No stored result found for race_id {race_id}"}), 404
 
-        race_date = race_row[0]["race_date"]      # "YYYY-MM-DD"
-        season_year = race_row[0]["season_year"]
+        p1_id = result_row[0]["p1_driver_id"]
+        p2_id = result_row[0]["p2_driver_id"]
+        p3_id = result_row[0]["p3_driver_id"]
 
-        # Find the Jolpica round number matching this date
-        round_num = jolpica.get_round_by_date(season_year, race_date)
-        if not round_num:
-            return jsonify({"error": f"No Jolpica round found for {season_year} on {race_date}"}), 404
-
-        # Get the podium results from Jolpica
-        podium = jolpica.get_race_results(season_year, round_num)
-        if len(podium) < 3:
-            return jsonify({"error": "Could not retrieve full podium from Jolpica"}), 502
-
-        # Match Jolpica last names to our DB driver_ids
-        db_drivers = supabase.table("driver").select("driver_id, last_name").execute().data
-        db_last_name_map = {d["last_name"].upper(): d["driver_id"] for d in db_drivers}
-
-        def resolve(position):
-            entry = next((p for p in podium if p["position"] == position), None)
-            if not entry:
-                return None
-            return db_last_name_map.get(entry["last_name"])
-
-        p1_id = resolve(1)
-        p2_id = resolve(2)
-        p3_id = resolve(3)
-
-        if not p1_id or not p2_id or not p3_id:
-            unmatched = [p for p in podium if db_last_name_map.get(p["last_name"]) is None]
-            return jsonify({
-                "error": "Could not match all podium drivers to DB",
-                "unmatched": unmatched
-            }), 422
-
-        # Safety car not available from Jolpica — pass None to skip that point
         count = _apply_scores(race_id, p1_id, p2_id, p3_id, safety_car_result=None)
 
         return jsonify({
             "message": f"Historical scores calculated for race_id {race_id}",
-            "season": season_year,
-            "round": round_num,
             "p1": p1_id, "p2": p2_id, "p3": p3_id,
-            "safety_car": "not available (Jolpica)",
+            "safety_car": "not available",
             "predictions_scored": count,
         }), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+def insert_recent_races():
+    try:
+        recent = jolpica.get_recent_races(n=10)
+
+        # Fetch all existing (race_date, season_year) pairs in one query
+        existing_rows = (
+            supabase
+            .table("race")
+            .select("race_date, season_year")
+            .execute()
+            .data
+        )
+        existing = {(row["race_date"], str(row["season_year"])) for row in existing_rows}
+
+        to_insert = []
+        for race in recent:
+            key = (race["date"], str(race["season"]))
+            if key not in existing:
+                to_insert.append({
+                    "location": race["location"],
+                    "race_date": race["date"],
+                    "season_year": race["season"],
+                })
+
+        if to_insert:
+            supabase.table("race").insert(to_insert).execute()
+            print(f"[seed] Inserted {len(to_insert)} new race(s) into the database.")
+        else:
+            print("[seed] No new races to insert.")
+
+    except Exception as e:
+        print(f"[seed] Warning: could not seed recent races — {e}")
+
+
+def insert_teams_and_drivers():
+    try:
+        entries = jolpica.get_current_season_drivers()
+
+        # --- Teams ---
+        existing_teams = supabase.table("team").select("team_id, team_name").execute().data
+        existing_team_names = {row["team_name"] for row in existing_teams}
+
+        new_team_names = {e["team_name"] for e in entries if e["team_name"]} - existing_team_names
+        if new_team_names:
+            supabase.table("team").insert([{"team_name": name} for name in new_team_names]).execute()
+            print(f"[seed] Inserted {len(new_team_names)} new team(s): {', '.join(new_team_names)}")
+        else:
+            print("[seed] No new teams to insert.")
+
+        # Refresh full team map after inserts
+        all_teams = supabase.table("team").select("team_id, team_name").execute().data
+        team_name_to_id = {row["team_name"]: row["team_id"] for row in all_teams}
+
+        # --- Drivers ---
+        existing_drivers = supabase.table("driver").select("first_name, last_name").execute().data
+        existing_driver_keys = {(row["first_name"], row["last_name"]) for row in existing_drivers}
+
+        to_insert_drivers = []
+        for entry in entries:
+            key = (entry["first_name"], entry["last_name"])
+            if key not in existing_driver_keys:
+                to_insert_drivers.append({
+                    "first_name": entry["first_name"],
+                    "last_name": entry["last_name"],
+                    "team_id": team_name_to_id.get(entry["team_name"]),
+                })
+
+        if to_insert_drivers:
+            supabase.table("driver").insert(to_insert_drivers).execute()
+            print(f"[seed] Inserted {len(to_insert_drivers)} new driver(s).")
+        else:
+            print("[seed] No new drivers to insert.")
+
+    except Exception as e:
+        print(f"[seed] Warning: could not seed teams/drivers — {e}")
+
+
+def insert_race_results():
+    try:
+        all_races = (
+            supabase.table("race")
+            .select("race_id, race_date, season_year")
+            .execute()
+            .data
+        )
+        existing_ids = {
+            row["race_id"]
+            for row in supabase.table("race_result").select("race_id").execute().data
+        }
+        db_drivers = supabase.table("driver").select("driver_id, last_name").execute().data
+        last_name_to_id = {d["last_name"].upper(): d["driver_id"] for d in db_drivers}
+
+        # Pre-fetch the round schedule per season to avoid one API call per race
+        season_schedules = {}
+        for race in all_races:
+            year = race["season_year"]
+            if year not in season_schedules:
+                try:
+                    season_races = jolpica.get_season_races(year)
+                    season_schedules[year] = {r["date"]: int(r["round"]) for r in season_races}
+                except Exception:
+                    season_schedules[year] = {}
+
+        inserted = 0
+        for race in all_races:
+            if race["race_id"] in existing_ids:
+                continue
+            round_num = season_schedules.get(race["season_year"], {}).get(race["race_date"])
+            if not round_num:
+                continue
+            try:
+                podium = jolpica.get_race_results(race["season_year"], round_num)
+                if len(podium) < 3:
+                    continue
+                p1_id = last_name_to_id.get(next((p["last_name"] for p in podium if p["position"] == 1), ""))
+                p2_id = last_name_to_id.get(next((p["last_name"] for p in podium if p["position"] == 2), ""))
+                p3_id = last_name_to_id.get(next((p["last_name"] for p in podium if p["position"] == 3), ""))
+                if p1_id and p2_id and p3_id:
+                    supabase.table("race_result").insert({
+                        "race_id": race["race_id"],
+                        "p1_driver_id": p1_id,
+                        "p2_driver_id": p2_id,
+                        "p3_driver_id": p3_id,
+                    }).execute()
+                    inserted += 1
+            except Exception:
+                continue
+
+        print(f"[seed] Race results: inserted {inserted} new result(s).")
+    except Exception as e:
+        print(f"[seed] Warning: could not seed race results — {e}")
+
+
+insert_recent_races()
+insert_teams_and_drivers()
+insert_race_results()
 
 
 if __name__ == '__main__':
