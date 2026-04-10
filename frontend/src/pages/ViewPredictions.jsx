@@ -10,7 +10,6 @@ function ViewPredictions() {
       try {
         setLoading(true)
         setError('')
-
         const response = await fetch('/api/predictions')
 
         if (!response.ok) {

@@ -66,6 +66,23 @@ def get_predictions():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# A GET route to retrieve all predictions stored in the database
+@app.route('/api/user_predictions/<user_id>', methods=['GET'])
+def get_user_predictions(user_id):
+    try:
+        response = (
+            supabase
+            .table("prediction")
+            .select("pred_id, user_id, race_id, p1_pick, p2_pick, p3_pick, safety_car_prediction, points_earned")
+            .eq("user_id", user_id)
+            .order("pred_id")
+            .execute()
+        )
+        print(response)
+        return jsonify(response.data), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # A POST route to submit a new race prediction
 @app.route('/api/predict', methods=['POST'])
 def post_prediction():

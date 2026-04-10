@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 function LogIn() {
   const [userData, setUserData] = useState('')
@@ -6,6 +6,13 @@ function LogIn() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  useEffect(() => {
+    const saveId = localStorage.getItem("user_id");
+    if (saveId) {
+      setUserData(localStorage.getItem("username"));
+    }
+  }, []);
 
   const handleSubmit = async (event) => {
     event.preventDefault()
@@ -31,8 +38,8 @@ function LogIn() {
       const data = await response.json()
       if (response.ok) {
         const body = data.body;
-        console.log(body);
-        localStorage.setItem("user_id", body.id);
+        localStorage.setItem("user_id", body.user_id);
+        localStorage.setItem("username", body.username);
         setSuccess(data.message);
         setUserData(body.username);
       } else {
