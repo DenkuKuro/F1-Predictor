@@ -159,18 +159,38 @@ def get_leaderboard():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# A GET route to retrieve all predictions stored in the database
+# A GET route to retrieve all predictions stored in the database, enriched with names
 @app.route('/api/predictions', methods=['GET'])
 def get_predictions():
     try:
-        response = (
-            supabase
-            .table("prediction")
-            .select("pred_id, user_id, race_id, p1_pick, p2_pick, p3_pick, safety_car_prediction, points_earned")
+        preds = (
+            supabase.table("prediction")
+            .select("pred_id, race_id, p1_pick, p2_pick, p3_pick, safety_car_prediction, points_earned")
             .order("pred_id")
             .execute()
+            .data
         )
-        return jsonify(response.data), 200
+
+        races = supabase.table("race").select("race_id, location, race_date").execute().data
+        race_map = {r["race_id"]: f"{r['location']} — {r['race_date']}" for r in races}
+
+        drivers = supabase.table("driver").select("driver_id, first_name, last_name").execute().data
+        driver_map = {d["driver_id"]: f"{d['first_name']} {d['last_name']}" for d in drivers}
+
+        enriched = [
+            {
+                "pred_id": p["pred_id"],
+                "race_name": race_map.get(p["race_id"], f"Race #{p['race_id']}"),
+                "p1_pick": driver_map.get(p["p1_pick"], f"Driver #{p['p1_pick']}"),
+                "p2_pick": driver_map.get(p["p2_pick"], f"Driver #{p['p2_pick']}"),
+                "p3_pick": driver_map.get(p["p3_pick"], f"Driver #{p['p3_pick']}"),
+                "safety_car_prediction": p["safety_car_prediction"],
+                "points_earned": p["points_earned"],
+            }
+            for p in preds
+        ]
+
+        return jsonify(enriched), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -213,6 +233,18 @@ def post_prediction():
         return jsonify({"error": "P1, P2, and P3 picks must all be different"}), 400
 
     try:
+        # Reject duplicate predictions for the same user + race
+        existing = (
+            supabase.table("prediction")
+            .select("pred_id")
+            .eq("user_id", user_id)
+            .eq("race_id", race_id)
+            .execute()
+            .data
+        )
+        if existing:
+            return jsonify({"error": "You have already submitted a prediction for this race."}), 409
+
         response = (
             supabase
             .table("prediction")
@@ -223,7 +255,7 @@ def post_prediction():
                 "p2_pick": p2_pick,
                 "p3_pick": p3_pick,
                 "safety_car_prediction": safety_car_prediction,
-                "points_earned": 0
+                "points_earned": -1
             })
             .execute()
         )
@@ -278,7 +310,6 @@ def login():
     email = content.get("email", "").lower()
     password = content.get("password", "").lower()
     try:
-        supabase.table("users").select("*", count="exact").eq("email", email).eq("password", password).execute()
         response = (
             supabase.table("users")
             .select("user_id, username")
@@ -286,10 +317,8 @@ def login():
             .eq("password", password)
             .execute()
         )
-        print(response)
-        if response.data: 
-            data = response.data[0]
-            return jsonify({"message": "Logged in successfully!", "body": data}), 201
+        if response.data:
+            return jsonify({"message": "Logged in successfully!", "body": response.data[0]}), 201
         return jsonify({"error": "No such user exists"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -522,7 +551,7 @@ def calculate_scores_history():
     try:
         result_row = (
             supabase.table("race_result")
-            .select("p1_driver_id, p2_driver_id, p3_driver_id")
+            .select("p1_driver, p2_driver, p3_driver")
             .eq("race_id", race_id)
             .execute()
             .data
@@ -530,9 +559,9 @@ def calculate_scores_history():
         if not result_row:
             return jsonify({"error": f"No stored result found for race_id {race_id}"}), 404
 
-        p1_id = result_row[0]["p1_driver_id"]
-        p2_id = result_row[0]["p2_driver_id"]
-        p3_id = result_row[0]["p3_driver_id"]
+        p1_id = result_row[0]["p1_driver"]
+        p2_id = result_row[0]["p2_driver"]
+        p3_id = result_row[0]["p3_driver"]
 
         count = _apply_scores(race_id, p1_id, p2_id, p3_id, safety_car_result=None)
 
@@ -543,6 +572,123 @@ def calculate_scores_history():
             "predictions_scored": count,
         }), 200
 
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# POST /api/calculate-scores/pending
+# Scores all predictions where points_earned == -1 (not yet calculated).
+# Reads race_result from the DB, compares picks, sets points_earned, += user total.
+@app.route("/api/calculate-scores/pending", methods=["POST"])
+def calculate_scores_pending():
+    from collections import defaultdict
+    try:
+        unscored = (
+            supabase.table("prediction")
+            .select("pred_id, user_id, race_id, p1_pick, p2_pick, p3_pick, safety_car_prediction")
+            .eq("points_earned", -1)
+            .execute()
+            .data
+        )
+
+        if not unscored:
+            return jsonify({"message": "No pending predictions to score.", "predictions_scored": 0}), 200
+
+        result_map = {
+            r["race_id"]: r
+            for r in supabase.table("race_result").select("race_id, p1_driver, p2_driver, p3_driver, safety_car_result").execute().data
+        }
+
+        by_race = defaultdict(list)
+        for pred in unscored:
+            by_race[pred["race_id"]].append(pred)
+
+        total_scored = 0
+        races_no_result = []
+
+        for race_id, preds in by_race.items():
+            result = result_map.get(race_id)
+            if not result:
+                races_no_result.append(race_id)
+                continue
+
+            p1_id = result["p1_driver"]
+            p2_id = result["p2_driver"]
+            p3_id = result["p3_driver"]
+            podium = {p1_id, p2_id, p3_id}
+            sc = result.get("safety_car_result")
+
+            for pred in preds:
+                points = 0
+
+                # Correct position = 100pts, on podium but wrong position = 50pts
+                if pred["p1_pick"] == p1_id:
+                    points += 100
+                elif pred["p1_pick"] in podium:
+                    points += 50
+
+                if pred["p2_pick"] == p2_id:
+                    points += 100
+                elif pred["p2_pick"] in podium:
+                    points += 50
+
+                if pred["p3_pick"] == p3_id:
+                    points += 100
+                elif pred["p3_pick"] in podium:
+                    points += 50
+
+                # Correct safety car = 50pts
+                if sc is not None and pred["safety_car_prediction"] == sc:
+                    points += 50
+
+                supabase.table("prediction").update({"points_earned": points}).eq("pred_id", pred["pred_id"]).execute()
+
+                user_row = supabase.table("users").select("total_points").eq("user_id", pred["user_id"]).execute().data
+                if user_row:
+                    supabase.table("users").update({
+                        "total_points": (user_row[0]["total_points"] or 0) + points
+                    }).eq("user_id", pred["user_id"]).execute()
+
+                total_scored += 1
+
+        msg = f"Scored {total_scored} prediction(s)."
+        if races_no_result:
+            msg += f" {len(races_no_result)} race(s) have no result stored yet."
+        return jsonify({"message": msg, "predictions_scored": total_scored}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# DELETE /api/predictions/<pred_id>
+# Removes a prediction and -= its earned points from the user's total_points.
+# If points_earned is -1 (never scored), nothing is subtracted.
+@app.route("/api/predictions/<int:pred_id>", methods=["DELETE"])
+def delete_prediction(pred_id):
+    try:
+        pred_row = (
+            supabase.table("prediction")
+            .select("user_id, points_earned")
+            .eq("pred_id", pred_id)
+            .execute()
+            .data
+        )
+        if not pred_row:
+            return jsonify({"error": "Prediction not found"}), 404
+
+        user_id = pred_row[0]["user_id"]
+        points_earned = pred_row[0]["points_earned"]
+
+        supabase.table("prediction").delete().eq("pred_id", pred_id).execute()
+
+        if points_earned > 0:
+            user_row = supabase.table("users").select("total_points").eq("user_id", user_id).execute().data
+            if user_row:
+                supabase.table("users").update({
+                    "total_points": max(0, (user_row[0]["total_points"] or 0) - points_earned)
+                }).eq("user_id", user_id).execute()
+
+        return jsonify({"message": "Prediction deleted."}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -639,7 +785,7 @@ def insert_race_results():
         db_drivers = supabase.table("driver").select("driver_id, last_name").execute().data
         last_name_to_id = {d["last_name"].upper(): d["driver_id"] for d in db_drivers}
 
-        # Pre-fetch the round schedule per season to avoid one API call per race
+        # Pre-fetch the round schedule per season (one API call per season, not per race)
         season_schedules = {}
         for race in all_races:
             year = race["season_year"]
@@ -647,7 +793,8 @@ def insert_race_results():
                 try:
                     season_races = jolpica.get_season_races(year)
                     season_schedules[year] = {r["date"]: int(r["round"]) for r in season_races}
-                except Exception:
+                except Exception as e:
+                    print(f"[seed] Could not fetch {year} schedule: {e}")
                     season_schedules[year] = {}
 
         inserted = 0
@@ -656,23 +803,33 @@ def insert_race_results():
                 continue
             round_num = season_schedules.get(race["season_year"], {}).get(race["race_date"])
             if not round_num:
+                print(f"[seed] No Jolpica round for race_id {race['race_id']} ({race['race_date']}) — skipping.")
                 continue
             try:
                 podium = jolpica.get_race_results(race["season_year"], round_num)
                 if len(podium) < 3:
+                    print(f"[seed] Incomplete podium for race_id {race['race_id']} — skipping.")
                     continue
-                p1_id = last_name_to_id.get(next((p["last_name"] for p in podium if p["position"] == 1), ""))
-                p2_id = last_name_to_id.get(next((p["last_name"] for p in podium if p["position"] == 2), ""))
-                p3_id = last_name_to_id.get(next((p["last_name"] for p in podium if p["position"] == 3), ""))
-                if p1_id and p2_id and p3_id:
-                    supabase.table("race_result").insert({
-                        "race_id": race["race_id"],
-                        "p1_driver_id": p1_id,
-                        "p2_driver_id": p2_id,
-                        "p3_driver_id": p3_id,
-                    }).execute()
-                    inserted += 1
-            except Exception:
+                p1_last = next((p["last_name"] for p in podium if p["position"] == 1), "")
+                p2_last = next((p["last_name"] for p in podium if p["position"] == 2), "")
+                p3_last = next((p["last_name"] for p in podium if p["position"] == 3), "")
+                p1_id = last_name_to_id.get(p1_last)
+                p2_id = last_name_to_id.get(p2_last)
+                p3_id = last_name_to_id.get(p3_last)
+                unmatched = [n for n, i in [(p1_last, p1_id), (p2_last, p2_id), (p3_last, p3_id)] if not i]
+                if unmatched:
+                    print(f"[seed] race_id {race['race_id']}: could not match driver(s) {unmatched} to DB — skipping.")
+                    continue
+                supabase.table("race_result").insert({
+                    "race_id": race["race_id"],
+                    "p1_driver": p1_id,
+                    "p2_driver": p2_id,
+                    "p3_driver": p3_id,
+                    "safety_car_result": random.choice([True, False]),
+                }).execute()
+                inserted += 1
+            except Exception as e:
+                print(f"[seed] race_id {race['race_id']}: unexpected error — {e}")
                 continue
 
         print(f"[seed] Race results: inserted {inserted} new result(s).")

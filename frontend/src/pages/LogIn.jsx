@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-function LogIn() {
+function LogIn({ onLogin }) {
   const [userData, setUserData] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -42,6 +42,7 @@ function LogIn() {
         localStorage.setItem("username", body.username);
         setSuccess(data.message);
         setUserData(body.username);
+        if (onLogin) onLogin({ user_id: body.user_id, username: body.username });
       } else {
         setError(data.message)
       }
