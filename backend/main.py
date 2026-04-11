@@ -585,7 +585,7 @@ def calculate_scores_pending():
     try:
         unscored = (
             supabase.table("prediction")
-            .select("pred_id, user_id, race_id, p1_pick, p2_pick, p3_pick")
+            .select("pred_id, user_id, race_id, p1_pick, p2_pick, p3_pick, safety_car_prediction")
             .eq("points_earned", -1)
             .execute()
             .data
@@ -596,7 +596,7 @@ def calculate_scores_pending():
 
         result_map = {
             r["race_id"]: r
-            for r in supabase.table("race_result").select("race_id, p1_driver, p2_driver, p3_driver").execute().data
+            for r in supabase.table("race_result").select("race_id, p1_driver, p2_driver, p3_driver, safety_car_result").execute().data
         }
 
         by_race = defaultdict(list)
@@ -615,15 +615,31 @@ def calculate_scores_pending():
             p1_id = result["p1_driver"]
             p2_id = result["p2_driver"]
             p3_id = result["p3_driver"]
+            podium = {p1_id, p2_id, p3_id}
+            sc = result.get("safety_car_result")
 
             for pred in preds:
                 points = 0
+
+                # Correct position = 100pts, on podium but wrong position = 50pts
                 if pred["p1_pick"] == p1_id:
-                    points += 3
+                    points += 100
+                elif pred["p1_pick"] in podium:
+                    points += 50
+
                 if pred["p2_pick"] == p2_id:
-                    points += 2
+                    points += 100
+                elif pred["p2_pick"] in podium:
+                    points += 50
+
                 if pred["p3_pick"] == p3_id:
-                    points += 1
+                    points += 100
+                elif pred["p3_pick"] in podium:
+                    points += 50
+
+                # Correct safety car = 50pts
+                if sc is not None and pred["safety_car_prediction"] == sc:
+                    points += 50
 
                 supabase.table("prediction").update({"points_earned": points}).eq("pred_id", pred["pred_id"]).execute()
 
@@ -809,6 +825,7 @@ def insert_race_results():
                     "p1_driver": p1_id,
                     "p2_driver": p2_id,
                     "p3_driver": p3_id,
+                    "safety_car_result": random.choice([True, False]),
                 }).execute()
                 inserted += 1
             except Exception as e:

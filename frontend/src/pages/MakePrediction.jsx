@@ -167,10 +167,9 @@ function MakePrediction({ selectedRace, currentUser }) {
             be deployed. All three driver picks must be different.
           </p>
           <ul className="rules-list">
-            <li>Correct P1 — <strong>3 pts</strong></li>
-            <li>Correct P2 — <strong>2 pts</strong></li>
-            <li>Correct P3 — <strong>1 pt</strong></li>
-            <li>Correct safety car call — <strong>1 pt</strong></li>
+            <li>Correct P1, P2, or P3 position — <strong>100 pts</strong></li>
+            <li>Driver on podium but wrong position — <strong>50 pts</strong></li>
+            <li>Correct safety car call — <strong>50 pts</strong></li>
           </ul>
         </article>
       </div>
