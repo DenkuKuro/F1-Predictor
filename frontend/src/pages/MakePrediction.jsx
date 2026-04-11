@@ -1,17 +1,14 @@
 import { useEffect, useState } from 'react'
 
-const initialForm = {
-  user_id: '',
-  race_id: '',
+const initialPicks = {
   p1_pick: '',
   p2_pick: '',
   p3_pick: '',
   safety_car_prediction: false,
 }
 
-function MakePrediction() {
-  const [formData, setFormData] = useState(initialForm)
-  const [races, setRaces] = useState([])
+function MakePrediction({ selectedRace, currentUser }) {
+  const [picks, setPicks] = useState(initialPicks)
   const [drivers, setDrivers] = useState([])
   const [loading, setLoading] = useState(false)
   const [pageLoading, setPageLoading] = useState(true)
@@ -19,100 +16,57 @@ function MakePrediction() {
   const [success, setSuccess] = useState('')
 
   useEffect(() => {
-    const loadFormOptions = async () => {
-      try {
-        setPageLoading(true)
-        setError('')
-
-        const [racesResponse, driversResponse] = await Promise.all([
-          fetch('/api/races'),
-          fetch('/api/drivers'),
-        ])
-
-        if (!racesResponse.ok || !driversResponse.ok) {
-          throw new Error('Could not load form data.')
-        }
-
-        const racesData = await racesResponse.json()
-        const driversData = await driversResponse.json()
-
-        const raceRows = Array.isArray(racesData) ? racesData : []
-        const driverRows = Array.isArray(driversData) ? driversData : []
-
-        setRaces(raceRows)
-        setDrivers(driverRows)
-        setFormData((current) => ({
-          ...current,
-          race_id: raceRows[0]?.race_id ? String(raceRows[0].race_id) : '',
-        }))
-      } catch (fetchError) {
-        setRaces([])
-        setDrivers([])
-        setError('No data available yet.')
-      } finally {
-        setPageLoading(false)
-      }
-    }
-
-    loadFormOptions()
+    fetch('/api/drivers')
+      .then((r) => {
+        if (!r.ok) throw new Error()
+        return r.json()
+      })
+      .then((data) => setDrivers(Array.isArray(data) ? data : []))
+      .catch(() => setError('Could not load drivers.'))
+      .finally(() => setPageLoading(false))
   }, [])
 
-  const handleChange = (event) => {
-    const { name, value, type, checked } = event.target
-    setFormData((current) => ({
-      ...current,
-      [name]: type === 'checkbox' ? checked : value,
-    }))
+  const handleChange = (e) => {
+    setPicks((cur) => ({ ...cur, [e.target.name]: e.target.value }))
   }
 
-  const handleSubmit = async (event) => {
-    event.preventDefault()
+  const handleSubmit = async (e) => {
+    e.preventDefault()
     setError('')
     setSuccess('')
 
-    if (
-      !formData.user_id ||
-      !formData.race_id ||
-      !formData.p1_pick ||
-      !formData.p2_pick ||
-      !formData.p3_pick
-    ) {
-      setError('Please complete every field before submitting.')
+    if (!selectedRace) {
+      setError('Please select a race from the left nav bar first.')
       return
     }
-
-    const selectedDrivers = [formData.p1_pick, formData.p2_pick, formData.p3_pick]
-    if (new Set(selectedDrivers).size !== selectedDrivers.length) {
+    if (!picks.p1_pick || !picks.p2_pick || !picks.p3_pick) {
+      setError('Please select a driver for P1, P2, and P3.')
+      return
+    }
+    if (new Set([picks.p1_pick, picks.p2_pick, picks.p3_pick]).size !== 3) {
       setError('P1, P2, and P3 must all be different drivers.')
       return
     }
 
     try {
       setLoading(true)
-
       const response = await fetch('/api/predict', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id: Number(formData.user_id),
-          race_id: Number(formData.race_id),
-          p1_pick: Number(formData.p1_pick),
-          p2_pick: Number(formData.p2_pick),
-          p3_pick: Number(formData.p3_pick),
-          safety_car_prediction: formData.safety_car_prediction,
+          user_id: Number(currentUser.user_id),
+          race_id: Number(selectedRace.race_id),
+          p1_pick: Number(picks.p1_pick),
+          p2_pick: Number(picks.p2_pick),
+          p3_pick: Number(picks.p3_pick),
+          safety_car_prediction: picks.safety_car_prediction,
         }),
       })
 
-      if (!response.ok) {
-        throw new Error('Could not submit prediction.')
-      }
-
+      if (!response.ok) throw new Error()
       setSuccess('Prediction submitted successfully.')
-      setFormData({
-        ...initialForm,
-        race_id: races[0]?.race_id ? String(races[0].race_id) : '',
-      })
-    } catch (fetchError) {
+      setPicks(initialPicks)
+    } catch {
       setError('Could not submit prediction.')
     } finally {
       setLoading(false)
@@ -126,59 +80,74 @@ function MakePrediction() {
           <p className="section-kicker">Make Prediction</p>
           <h3>Submit a race prediction</h3>
 
-          {pageLoading && <p className="card-copy">Loading form data...</p>}
+          {pageLoading && <p className="card-copy">Loading drivers…</p>}
 
           <form className="app-form" onSubmit={handleSubmit}>
-            <label className="field-label" htmlFor="user_id"> User ID</label>
-            <input id="user_id" name="user_id" type="number" className="app-input" value={formData.user_id} onChange={handleChange} />
 
-            <label className="field-label" htmlFor="race_id"> Race</label>
-            <select id="race_id" name="race_id" className="app-input" value={formData.race_id} onChange={handleChange} >
-              <option value="">Select a race</option>
-              {races.map((race) => (
-                <option key={race.race_id} value={race.race_id}>
-                  {race.location} - {race.race_date}
-                </option>
-              ))}
-            </select>
+            {/* Race — read-only, driven by the sidebar selector */}
+            <label className="field-label">Race</label>
+            <div className="race-display-field">
+              {selectedRace ? (
+                <span>{selectedRace.name} — {selectedRace.date}</span>
+              ) : (
+                <span className="race-hint">← Select a race from the left nav bar</span>
+              )}
+            </div>
 
+            {/* P1 */}
             <label className="field-label" htmlFor="p1_pick">P1</label>
-            <select id="p1_pick" name="p1_pick" className="app-input" value={formData.p1_pick} onChange={handleChange}>
+            <select id="p1_pick" name="p1_pick" className="app-input" value={picks.p1_pick} onChange={handleChange}>
               <option value="">Select a driver</option>
-              {drivers.map((driver) => (
-                <option key={driver.driver_id} value={driver.driver_id}>
-                  {driver.first_name} {driver.last_name}
+              {drivers.map((d) => (
+                <option key={d.driver_id} value={d.driver_id}>
+                  {d.first_name} {d.last_name}
                 </option>
               ))}
             </select>
 
+            {/* P2 */}
             <label className="field-label" htmlFor="p2_pick">P2</label>
-            <select id="p2_pick" name="p2_pick" className="app-input" value={formData.p2_pick} onChange={handleChange}>
+            <select id="p2_pick" name="p2_pick" className="app-input" value={picks.p2_pick} onChange={handleChange}>
               <option value="">Select a driver</option>
-              {drivers.map((driver) => (
-                <option key={driver.driver_id} value={driver.driver_id}>
-                  {driver.first_name} {driver.last_name}
+              {drivers.map((d) => (
+                <option key={d.driver_id} value={d.driver_id}>
+                  {d.first_name} {d.last_name}
                 </option>
               ))}
             </select>
 
+            {/* P3 */}
             <label className="field-label" htmlFor="p3_pick">P3</label>
-            <select id="p3_pick" name="p3_pick" className="app-input" value={formData.p3_pick} onChange={handleChange}>
+            <select id="p3_pick" name="p3_pick" className="app-input" value={picks.p3_pick} onChange={handleChange}>
               <option value="">Select a driver</option>
-              {drivers.map((driver) => (
-                <option key={driver.driver_id} value={driver.driver_id}>
-                  {driver.first_name} {driver.last_name}
+              {drivers.map((d) => (
+                <option key={d.driver_id} value={d.driver_id}>
+                  {d.first_name} {d.last_name}
                 </option>
               ))}
             </select>
 
-            <label className="checkbox-row" htmlFor="safety_car_prediction">
-              <input id="safety_car_prediction" name="safety_car_prediction" type="checkbox" checked={formData.safety_car_prediction} onChange={handleChange}/>
-              Safety Car
-            </label>
+            {/* Safety car — Yes / No toggle */}
+            <label className="field-label">Safety Car</label>
+            <div className="safety-car-toggle">
+              <button
+                type="button"
+                className={`toggle-btn ${picks.safety_car_prediction === true ? 'toggle-active' : ''}`}
+                onClick={() => setPicks((cur) => ({ ...cur, safety_car_prediction: true }))}
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                className={`toggle-btn ${picks.safety_car_prediction === false ? 'toggle-active' : ''}`}
+                onClick={() => setPicks((cur) => ({ ...cur, safety_car_prediction: false }))}
+              >
+                No
+              </button>
+            </div>
 
             <button type="submit" className="primary-button full-width" disabled={loading}>
-              {loading ? 'Submitting...' : 'Submit Prediction'}
+              {loading ? 'Submitting…' : 'Submit Prediction'}
             </button>
           </form>
 
@@ -186,14 +155,20 @@ function MakePrediction() {
           {success && <p className="feedback-message success">{success}</p>}
         </article>
 
-        <article className="content-card lock-card">
+        <article className="content-card">
           <p className="section-kicker">Notes</p>
           <h3>Prediction Rules</h3>
           <p className="card-copy">
-            Users can submit a race prediction by selecting drivers for P1, P2, and P3 along with a safety car prediction. 
-            The form retrieves available drivers and races from the backend API and stores the prediction in the database.
-            All driver selections must be different before submitting.
+            Select a race from the left nav bar, then choose who you think will
+            finish P1, P2, and P3. You may also predict whether a safety car will
+            be deployed. All three driver picks must be different.
           </p>
+          <ul className="rules-list">
+            <li>Correct P1 — <strong>3 pts</strong></li>
+            <li>Correct P2 — <strong>2 pts</strong></li>
+            <li>Correct P3 — <strong>1 pt</strong></li>
+            <li>Correct safety car call — <strong>1 pt</strong></li>
+          </ul>
         </article>
       </div>
     </section>

@@ -73,7 +73,7 @@ function App() {
       case 'results':
         return <RaceResults selectedRace={selectedRace} />
       case 'makePrediction':
-        return <MakePrediction />
+        return <MakePrediction selectedRace={selectedRace} currentUser={currentUser} />
       case 'viewPredictions':
         return <ViewPredictions />
       case 'myPredictions':
