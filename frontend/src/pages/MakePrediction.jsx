@@ -21,7 +21,12 @@ function MakePrediction({ selectedRace, currentUser }) {
         if (!r.ok) throw new Error()
         return r.json()
       })
-      .then((data) => setDrivers(Array.isArray(data) ? data : []))
+      .then((data) => {
+        if (Array.isArray(data)) {
+          data.sort((a, b) => a.first_name.localeCompare(b.first_name))
+          setDrivers(data)
+        }
+      })
       .catch(() => setError('Could not load drivers.'))
       .finally(() => setPageLoading(false))
   }, [])
