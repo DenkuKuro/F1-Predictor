@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import './App.css'
+import Landing from './pages/Landing'
 import Leaderboard from './pages/Leaderboard'
 import LogIn from './pages/LogIn'
 import SignUp from './pages/SignUp'
@@ -9,35 +10,68 @@ import ViewUserPredictions from './pages/ViewUserPredictions'
 import AboutTheRace from './pages/AboutTheRace'
 import RaceResults from './pages/RaceResults'
 
+const PROTECTED_PAGES = new Set(['results', 'leaderboard', 'makePrediction', 'viewPredictions', 'myPredictions'])
+
 const navigationItems = [
   { id: 'aboutRace', label: 'About The Race' },
-  { id: 'results', label: 'See Results'},
+  { id: 'results', label: 'See Results' },
   { id: 'leaderboard', label: 'Leaderboard' },
   { id: 'makePrediction', label: 'Make Prediction' },
   { id: 'viewPredictions', label: 'View Predictions' },
   { id: 'myPredictions', label: 'My Predictions' },
   { id: 'login', label: 'Login' },
-  { id: 'signup', label: 'Sign Up'}
+  { id: 'signup', label: 'Sign Up' },
 ]
 
 function App() {
-  const [activePage, setActivePage] = useState('leaderboard')
+  const [activePage, setActivePage] = useState('landing')
   const [recentRaces, setRecentRaces] = useState([])
   const [selectedRace, setSelectedRace] = useState(null)
+  const [currentUser, setCurrentUser] = useState(() => {
+    const id = localStorage.getItem('user_id')
+    const username = localStorage.getItem('username')
+    return id && username ? { user_id: id, username } : null
+  })
 
   useEffect(() => {
     fetch('/api/recent-races')
       .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data)) setRecentRaces(data)
-      })
+      .then((data) => { if (Array.isArray(data)) setRecentRaces(data) })
       .catch(() => {})
   }, [])
 
+  const handleLogin = (user) => {
+    setCurrentUser(user)
+    setActivePage('leaderboard')
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('user_id')
+    localStorage.removeItem('username')
+    setCurrentUser(null)
+    setActivePage('landing')
+  }
+
+  const handleNavClick = (id) => {
+    if (PROTECTED_PAGES.has(id) && !currentUser) {
+      setActivePage('login')
+    } else {
+      setActivePage(id)
+    }
+  }
+
+  const pageTitle = activePage === 'landing'
+    ? null
+    : navigationItems.find((item) => item.id === activePage)?.label
+
   const renderPage = () => {
     switch (activePage) {
+      case 'landing':
+        return <Landing onNavigate={setActivePage} />
       case 'aboutRace':
         return <AboutTheRace selectedRace={selectedRace} />
+      case 'results':
+        return <RaceResults selectedRace={selectedRace} />
       case 'makePrediction':
         return <MakePrediction />
       case 'viewPredictions':
@@ -45,22 +79,25 @@ function App() {
       case 'myPredictions':
         return <ViewUserPredictions />
       case 'login':
-        return <LogIn />
+        return <LogIn onLogin={handleLogin} />
       case 'signup':
         return <SignUp />
       case 'leaderboard':
-        return <Leaderboard />
-      case 'results':
-        return <RaceResults />
       default:
         return <Leaderboard />
     }
   }
 
+  // Logged out: show only About The Race + Login + Sign Up
+  // Logged in: show everything except Login + Sign Up
+  const visibleNav = currentUser
+    ? navigationItems.filter((item) => item.id !== 'login' && item.id !== 'signup')
+    : navigationItems.filter((item) => !PROTECTED_PAGES.has(item.id))
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand-block">
+        <div className="brand-block brand-clickable" onClick={() => setActivePage('landing')}>
           <h1>F1 Predictor</h1>
         </div>
 
@@ -84,27 +121,34 @@ function App() {
         </div>
 
         <nav className="nav-list" aria-label="Primary navigation">
-          {navigationItems.map((item) => (
+          {visibleNav.map((item) => (
             <button
               key={item.id}
               type="button"
               className={`nav-button ${activePage === item.id ? 'active' : ''}`}
-              onClick={() => setActivePage(item.id)}
+              onClick={() => handleNavClick(item.id)}
             >
               {item.label}
             </button>
           ))}
         </nav>
 
+        {currentUser && (
+          <div className="user-block">
+            <p className="panel-label">Signed in as</p>
+            <p className="user-name">{currentUser.username}</p>
+            <button className="logout-button" onClick={handleLogout}>
+              Log Out
+            </button>
+          </div>
+        )}
       </aside>
 
       <main className="main-content">
         <header className="topbar">
           <div>
             <p className="eyebrow">Formula 1 Prediction Database Project</p>
-            <h2 className="page-title">
-              {navigationItems.find((item) => item.id === activePage)?.label}
-            </h2>
+            {pageTitle && <h2 className="page-title">{pageTitle}</h2>}
           </div>
         </header>
 

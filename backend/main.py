@@ -522,7 +522,7 @@ def calculate_scores_history():
     try:
         result_row = (
             supabase.table("race_result")
-            .select("p1_driver_id, p2_driver_id, p3_driver_id")
+            .select("p1_driver, p2_driver, p3_driver")
             .eq("race_id", race_id)
             .execute()
             .data
@@ -530,9 +530,9 @@ def calculate_scores_history():
         if not result_row:
             return jsonify({"error": f"No stored result found for race_id {race_id}"}), 404
 
-        p1_id = result_row[0]["p1_driver_id"]
-        p2_id = result_row[0]["p2_driver_id"]
-        p3_id = result_row[0]["p3_driver_id"]
+        p1_id = result_row[0]["p1_driver"]
+        p2_id = result_row[0]["p2_driver"]
+        p3_id = result_row[0]["p3_driver"]
 
         count = _apply_scores(race_id, p1_id, p2_id, p3_id, safety_car_result=None)
 
@@ -639,7 +639,11 @@ def insert_race_results():
         db_drivers = supabase.table("driver").select("driver_id, last_name").execute().data
         last_name_to_id = {d["last_name"].upper(): d["driver_id"] for d in db_drivers}
 
-        # Pre-fetch the round schedule per season to avoid one API call per race
+        if not db_drivers:
+            print("[seed] WARNING: No drivers in DB — run the server once more after drivers are seeded.")
+            return
+
+        # Pre-fetch the round schedule per season (one API call per season, not per race)
         season_schedules = {}
         for race in all_races:
             year = race["season_year"]
@@ -647,7 +651,8 @@ def insert_race_results():
                 try:
                     season_races = jolpica.get_season_races(year)
                     season_schedules[year] = {r["date"]: int(r["round"]) for r in season_races}
-                except Exception:
+                except Exception as e:
+                    print(f"[seed] Could not fetch {year} schedule: {e}")
                     season_schedules[year] = {}
 
         inserted = 0
@@ -656,23 +661,32 @@ def insert_race_results():
                 continue
             round_num = season_schedules.get(race["season_year"], {}).get(race["race_date"])
             if not round_num:
+                print(f"[seed] No Jolpica round for race_id {race['race_id']} ({race['race_date']}) — skipping.")
                 continue
             try:
                 podium = jolpica.get_race_results(race["season_year"], round_num)
                 if len(podium) < 3:
+                    print(f"[seed] Incomplete podium for race_id {race['race_id']} — skipping.")
                     continue
-                p1_id = last_name_to_id.get(next((p["last_name"] for p in podium if p["position"] == 1), ""))
-                p2_id = last_name_to_id.get(next((p["last_name"] for p in podium if p["position"] == 2), ""))
-                p3_id = last_name_to_id.get(next((p["last_name"] for p in podium if p["position"] == 3), ""))
-                if p1_id and p2_id and p3_id:
-                    supabase.table("race_result").insert({
-                        "race_id": race["race_id"],
-                        "p1_driver_id": p1_id,
-                        "p2_driver_id": p2_id,
-                        "p3_driver_id": p3_id,
-                    }).execute()
-                    inserted += 1
-            except Exception:
+                p1_last = next((p["last_name"] for p in podium if p["position"] == 1), "")
+                p2_last = next((p["last_name"] for p in podium if p["position"] == 2), "")
+                p3_last = next((p["last_name"] for p in podium if p["position"] == 3), "")
+                p1_id = last_name_to_id.get(p1_last)
+                p2_id = last_name_to_id.get(p2_last)
+                p3_id = last_name_to_id.get(p3_last)
+                unmatched = [n for n, i in [(p1_last, p1_id), (p2_last, p2_id), (p3_last, p3_id)] if not i]
+                if unmatched:
+                    print(f"[seed] race_id {race['race_id']}: could not match driver(s) {unmatched} to DB — skipping.")
+                    continue
+                supabase.table("race_result").insert({
+                    "race_id": race["race_id"],
+                    "p1_driver": p1_id,
+                    "p2_driver": p2_id,
+                    "p3_driver": p3_id,
+                }).execute()
+                inserted += 1
+            except Exception as e:
+                print(f"[seed] race_id {race['race_id']}: unexpected error — {e}")
                 continue
 
         print(f"[seed] Race results: inserted {inserted} new result(s).")
