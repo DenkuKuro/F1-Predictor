@@ -63,11 +63,14 @@ function MakePrediction({ selectedRace, currentUser }) {
         }),
       })
 
-      if (!response.ok) throw new Error()
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(body.error || 'Could not submit prediction.')
+      }
       setSuccess('Prediction submitted successfully.')
       setPicks(initialPicks)
-    } catch {
-      setError('Could not submit prediction.')
+    } catch (err) {
+      setError(err.message || 'Could not submit prediction.')
     } finally {
       setLoading(false)
     }

@@ -569,6 +569,27 @@
   letter-spacing: 0.05em;
 }
 
+/* ViewPredictions delete button */
+.delete-btn {
+  background: rgba(225, 6, 0, 0.12);
+  border: 1px solid rgba(225, 6, 0, 0.3);
+  color: #ff9d97;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.delete-btn:hover:not(:disabled) {
+  background: rgba(225, 6, 0, 0.28);
+}
+
+.delete-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Tablet and small desktop responsive styles */
 @media (max-width: 1100px) {
   .app-shell {

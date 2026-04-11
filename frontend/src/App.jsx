@@ -6,11 +6,10 @@ import LogIn from './pages/LogIn'
 import SignUp from './pages/SignUp'
 import MakePrediction from './pages/MakePrediction'
 import ViewPredictions from './pages/ViewPredictions'
-import ViewUserPredictions from './pages/ViewUserPredictions'
 import AboutTheRace from './pages/AboutTheRace'
 import RaceResults from './pages/RaceResults'
 
-const PROTECTED_PAGES = new Set(['results', 'leaderboard', 'makePrediction', 'viewPredictions', 'myPredictions'])
+const PROTECTED_PAGES = new Set(['results', 'leaderboard', 'makePrediction', 'viewPredictions'])
 
 const navigationItems = [
   { id: 'aboutRace', label: 'About The Race' },
@@ -18,7 +17,6 @@ const navigationItems = [
   { id: 'leaderboard', label: 'Leaderboard' },
   { id: 'makePrediction', label: 'Make Prediction' },
   { id: 'viewPredictions', label: 'View Predictions' },
-  { id: 'myPredictions', label: 'My Predictions' },
   { id: 'login', label: 'Login' },
   { id: 'signup', label: 'Sign Up' },
 ]
@@ -76,8 +74,6 @@ function App() {
         return <MakePrediction selectedRace={selectedRace} currentUser={currentUser} />
       case 'viewPredictions':
         return <ViewPredictions />
-      case 'myPredictions':
-        return <ViewUserPredictions />
       case 'login':
         return <LogIn onLogin={handleLogin} />
       case 'signup':
