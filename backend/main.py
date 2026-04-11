@@ -396,45 +396,40 @@ def _apply_scores(race_id, p1_id, p2_id, p3_id, safety_car_result):
 
 @app.route('/api/race_results', methods=['GET'])
 def get_race_results():
-    # 1. Get the current user ID from the query parameter to exclude them from "other users"
     current_user_id = request.args.get('id')
-    
     try:
-        # 2. Fetch all available drivers and users from the DB
         all_drivers = supabase.table("driver").select("driver_id, first_name, last_name").execute().data
         all_users = supabase.table("users").select("user_id, username").execute().data
 
         if not all_drivers or not all_users:
             return jsonify({"error": "Insufficient data in database"}), 400
 
-        # 3. Randomly generate the "Actual Race" results (Top 3)
-        # We use random.sample to ensure no duplicate drivers in the podium
+        # 1. Generate Actual Race Outcome
         actual_podium = random.sample(all_drivers, 3)
-        p1_actual = actual_podium[0]
-        p2_actual = actual_podium[1]
-        p3_actual = actual_podium[2]
-        
-        # Simulate a random safety car outcome
+        p1_actual, p2_actual, p3_actual = actual_podium
         actual_safety_car = random.choice([True, False])
 
-        # 4. Generate predictions for other users and calculate scores
         user_results = []
         
+        # 2. Process Existing Users
         for user in all_users:
-            # Skip the user making the request
             if str(user["user_id"]) == str(current_user_id):
                 continue
 
-            # Give this user 3 random driver picks
             user_picks = random.sample(all_drivers, 3)
             user_sc_pred = random.choice([True, False])
 
-            # Calculate score based on your rules: P1=3, P2=2, P3=1, SC=1
             score = 0
-            if user_picks[0]["driver_id"] == p1_actual["driver_id"]: score += 300
-            if user_picks[1]["driver_id"] == p2_actual["driver_id"]: score += 200
+            if user_picks[0]["driver_id"] == p1_actual["driver_id"]: score += 100
+            if user_picks[1]["driver_id"] == p2_actual["driver_id"]: score += 100
             if user_picks[2]["driver_id"] == p3_actual["driver_id"]: score += 100
-            if user_sc_pred == actual_safety_car: score += 10
+            if user_sc_pred == actual_safety_car: score += 50
+            
+            # update users points in the database
+            supabase.table("users") \
+                .update({"points": score}) \
+                .eq("user_id", user["user_id"]) \
+                .execute()
 
             user_results.append({
                 "username": user["username"],
@@ -447,10 +442,33 @@ def get_race_results():
                 "score": score
             })
 
-        # 5. Sort the users list by score (Descending)
+        # 3. Create the Mock User result separately
+        mock_username = f"Guest_{random.randint(1000, 9999)}"
+        mock_picks = random.sample(all_drivers, 3)
+        mock_sc_pred = random.choice([True, False])
+
+        mock_score = 0
+        if mock_picks[0]["driver_id"] == p1_actual["driver_id"]: mock_score += 100
+        if mock_picks[1]["driver_id"] == p2_actual["driver_id"]: mock_score += 100
+        if mock_picks[2]["driver_id"] == p3_actual["driver_id"]: mock_score += 100
+        if mock_sc_pred == actual_safety_car: mock_score += 50
+
+        mock_user_data = {
+            "username": mock_username,
+            "prediction": {
+                "p1": f"{mock_picks[0]['first_name']} {mock_picks[0]['last_name']}",
+                "p2": f"{mock_picks[1]['first_name']} {mock_picks[1]['last_name']}",
+                "p3": f"{mock_picks[2]['first_name']} {mock_picks[2]['last_name']}",
+                "safety_car": mock_sc_pred
+            },
+            "score": mock_score
+        }
+
+        # 4. Add mock user to the list for the ranking, then sort
+        user_results.append(mock_user_data)
         user_results.sort(key=lambda x: x["score"], reverse=True)
 
-        # 6. Return the final JSON structure
+        # 5. Return JSON with the new 'user_simulation' field
         return jsonify({
             "actual_race": {
                 "p1": f"{p1_actual['first_name']} {p1_actual['last_name']}",
@@ -458,6 +476,7 @@ def get_race_results():
                 "p3": f"{p3_actual['first_name']} {p3_actual['last_name']}",
                 "safety_car": actual_safety_car
             },
+            "user_simulation": mock_user_data,  # <--- New field for easy access
             "leaderboard": user_results
         }), 200
 
@@ -467,9 +486,6 @@ def get_race_results():
 # POST /api/calculate-scores
 # Called when a race finishes. Matches OpenF1 podium results to our DB drivers
 # by last name, then scores every prediction for that race and updates totals.
-#
-# Scoring:
-#   Correct P1: 3 pts | Correct P2: 2 pts | Correct P3: 1 pt | Safety car: 1 pt
 @app.route("/api/calculate-scores", methods=["POST"])
 def calculate_scores():
     try:

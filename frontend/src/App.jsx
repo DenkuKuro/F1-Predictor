@@ -104,6 +104,7 @@ function App() {
             value={selectedRace ? selectedRace.race_id : ''}
             onChange={(e) => {
               const race = recentRaces.find((r) => String(r.race_id) === e.target.value)
+              localStorage.setItem('raceSelected', JSON.stringify(race));
               setSelectedRace(race ?? null)
             }}
           >
