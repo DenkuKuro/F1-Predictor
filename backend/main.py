@@ -14,7 +14,7 @@ def home():
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
-    return jsonify({"status": "online", "team": "StormForge", "active": True}), 200
+    return jsonify({"status": "online", "team": "CMPT354", "active": True}), 200
 
 @app.route('/api/drivers', methods=['GET'])
 def get_drivers():
