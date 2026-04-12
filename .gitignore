@@ -8,5 +8,3 @@ backend/.env
 
 # --- IDEs / Editors ---
 .vscode/
-
-.claude/
