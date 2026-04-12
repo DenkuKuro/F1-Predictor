@@ -289,7 +289,6 @@ def get_race_results():
         all_drivers = [{"driver_id": r[0], "first_name": r[1], "last_name": r[2]} for r in cur.fetchall()]
         driver_map = {d["driver_id"]: f"{d['first_name']} {d['last_name']}" for d in all_drivers}
 
-        # Use stored race result if it exists, otherwise generate and save one
         cur.execute(
             "SELECT p1_driver, p2_driver, p3_driver, safety_car_result FROM race_result WHERE race_id = %s",
             (race_id,)
@@ -487,14 +486,11 @@ def delete_prediction(pred_id):
         cur.execute("DELETE FROM prediction WHERE pred_id = %s", (pred_id,))
         conn.commit()
         cur.close(); conn.close()
-        # total_points is decremented automatically by the DB trigger
-        # (trg_subtract_points_on_delete — see schema_extras.sql)
         return jsonify({"message": "Prediction deleted."}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-# ── DIVISION: leaderboard filtered by races ────────────────────────────────
 @app.route("/api/leaderboard/division", methods=["GET"])
 def get_leaderboard_division():
     race_ids_param = request.args.get("race_ids", "").strip()
@@ -514,25 +510,17 @@ def get_leaderboard_division():
         conn = get_db_conn()
         cur = conn.cursor()
 
-        # Division query — users who have a prediction for EVERY selected race.
-        # Equivalent to: users U such that there is no selected race R for which
-        # U has no prediction.
         placeholders = ", ".join(["%s"] * len(race_ids))
         sql = f"""
             SELECT u.username, u.total_points
             FROM users u
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM (SELECT unnest(ARRAY[{placeholders}]::int[]) AS race_id) AS selected_races
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM prediction p
-                    WHERE p.user_id = u.user_id
-                      AND p.race_id = selected_races.race_id
-                )
-            )
-            ORDER BY u.total_points DESC NULLS LAST
+            JOIN prediction p ON u.user_id = p.user_id
+            WHERE p.race_id IN ({placeholders})
+            GROUP BY u.user_id, u.username, u.total_points
+            HAVING COUNT(DISTINCT p.race_id) = %s
+            ORDER BY u.total_points DESC
         """
-        cur.execute(sql, race_ids)
+        cur.execute(sql, race_ids + [len(race_ids)])
         rows = cur.fetchall()
         cur.close(); conn.close()
         return jsonify([{"username": r[0], "total_points": r[1]} for r in rows]), 200
@@ -540,7 +528,6 @@ def get_leaderboard_division():
         return jsonify({"error": str(e)}), 500
 
 
-# ── AGGREGATION (no GROUP BY): overall prediction stats ───────────────────
 @app.route("/api/stats/prediction-summary", methods=["GET"])
 def get_prediction_summary():
     try:
@@ -573,112 +560,75 @@ def get_prediction_summary():
         return jsonify({"error": str(e)}), 500
 
 
-# ── AGGREGATION WITH GROUP BY + JOIN: predictions grouped by user ──────────
 @app.route("/api/predictions/grouped", methods=["GET"])
 def get_predictions_grouped():
     user_id = request.args.get("user_id")
+    u_filter = f"WHERE users.user_id = %s" if user_id else ""
+    p_filter = f"WHERE p.user_id = %s" if user_id else ""
+    params = (user_id,) if user_id else ()
+
     try:
         conn = get_db_conn()
         cur = conn.cursor()
 
-        # GROUP BY query — aggregate stats per user (filtered to user_id if provided)
-        if user_id:
-            cur.execute("""
-                SELECT u.user_id,
-                       u.username,
-                       COUNT(p.pred_id)                                                          AS prediction_count,
-                       COALESCE(SUM(CASE WHEN p.points_earned >= 0 THEN p.points_earned END), 0) AS total_earned,
-                       ROUND(AVG(CASE WHEN p.points_earned >= 0 THEN p.points_earned END), 1)    AS avg_points
-                FROM users u
-                LEFT JOIN prediction p ON u.user_id = p.user_id
-                WHERE u.user_id = %s
-                GROUP BY u.user_id, u.username
-            """, (user_id,))
-        else:
-            cur.execute("""
-                SELECT u.user_id,
-                       u.username,
-                       COUNT(p.pred_id)                                                          AS prediction_count,
-                       COALESCE(SUM(CASE WHEN p.points_earned >= 0 THEN p.points_earned END), 0) AS total_earned,
-                       ROUND(AVG(CASE WHEN p.points_earned >= 0 THEN p.points_earned END), 1)    AS avg_points
-                FROM users u
-                LEFT JOIN prediction p ON u.user_id = p.user_id
-                GROUP BY u.user_id, u.username
-                ORDER BY total_earned DESC NULLS LAST
-            """)
-        user_rows = cur.fetchall()
-
-        # JOIN query — individual predictions with all names resolved via SQL JOINs
-        if user_id:
-            cur.execute("""
-                SELECT p.pred_id,
-                       p.user_id,
-                       r.location                                    AS race_name,
-                       r.race_date,
-                       d1.first_name || ' ' || d1.last_name         AS p1_driver,
-                       d2.first_name || ' ' || d2.last_name         AS p2_driver,
-                       d3.first_name || ' ' || d3.last_name         AS p3_driver,
-                       p.safety_car_prediction,
-                       p.points_earned
-                FROM prediction p
-                JOIN race   r  ON p.race_id  = r.race_id
-                JOIN driver d1 ON p.p1_pick  = d1.driver_id
-                JOIN driver d2 ON p.p2_pick  = d2.driver_id
-                JOIN driver d3 ON p.p3_pick  = d3.driver_id
-                WHERE p.user_id = %s
-                ORDER BY r.race_date
-            """, (user_id,))
-        else:
-            cur.execute("""
-                SELECT p.pred_id,
-                       p.user_id,
-                       r.location                                    AS race_name,
-                       r.race_date,
-                       d1.first_name || ' ' || d1.last_name         AS p1_driver,
-                       d2.first_name || ' ' || d2.last_name         AS p2_driver,
-                       d3.first_name || ' ' || d3.last_name         AS p3_driver,
-                       p.safety_car_prediction,
-                       p.points_earned
-                FROM prediction p
-                JOIN race   r  ON p.race_id  = r.race_id
-                JOIN driver d1 ON p.p1_pick  = d1.driver_id
-                JOIN driver d2 ON p.p2_pick  = d2.driver_id
-                JOIN driver d3 ON p.p3_pick  = d3.driver_id
-                ORDER BY p.user_id, r.race_date
-            """)
+        cur.execute(f"""
+            SELECT p.pred_id, p.user_id, r.location, r.race_date, 
+                   d1.first_name, d1.last_name, d2.first_name, d2.last_name, 
+                   d3.first_name, d3.last_name, p.safety_car_prediction, p.points_earned
+            FROM prediction p
+            JOIN race r ON p.race_id = r.race_id
+            JOIN driver d1 ON p.p1_pick = d1.driver_id
+            JOIN driver d2 ON p.p2_pick = d2.driver_id
+            JOIN driver d3 ON p.p3_pick = d3.driver_id
+            {p_filter}
+            ORDER BY p.user_id, r.race_date
+        """, params)
+        
         pred_rows = cur.fetchall()
-        cur.close(); conn.close()
 
         preds_by_user = defaultdict(list)
-        for row in pred_rows:
-            preds_by_user[row[1]].append({
-                "pred_id":               row[0],
-                "race_name":             f"{row[2]} — {row[3]}",
-                "p1_pick":               row[4],
-                "p2_pick":               row[5],
-                "p3_pick":               row[6],
-                "safety_car_prediction": row[7],
-                "points_earned":         row[8],
+        for r in pred_rows:
+            preds_by_user[r[1]].append({
+                "pred_id": r[0],
+                "race_name": f"{r[2]} ({r[3]})",
+                "p1_pick": f"{r[4]} {r[5]}",
+                "p2_pick": f"{r[6]} {r[7]}",
+                "p3_pick": f"{r[8]} {r[9]}",
+                "safety_car_prediction": r[10],
+                "points_earned": r[11]
             })
 
-        result = []
-        for row in user_rows:
-            uid, username, pred_count, total_earned, avg_points = row
-            result.append({
-                "user_id":          uid,
-                "username":         username,
-                "prediction_count": int(pred_count),
-                "total_earned":     int(total_earned),
-                "avg_points":       float(avg_points) if avg_points is not None else None,
-                "predictions":      preds_by_user.get(uid, []),
+        cur.execute(f"""
+            SELECT users.user_id, users.username, 
+                   COUNT(prediction.pred_id), 
+                   SUM(prediction.points_earned), 
+                   AVG(prediction.points_earned)
+            FROM users
+            LEFT JOIN prediction ON users.user_id = prediction.user_id
+            {u_filter}
+            GROUP BY users.user_id, users.username
+        """, params)
+        
+        user_rows = cur.fetchall()
+        cur.close(); conn.close()
+
+        final_data = []
+        for uid, name, count, total, avg in user_rows:
+            final_data.append({
+                "user_id": uid,
+                "username": name,
+                "prediction_count": int(count or 0),
+                "total_earned": int(total or 0),
+                "avg_points": round(float(avg), 1) if avg is not None else None,
+                "predictions": preds_by_user.get(uid, [])
             })
 
-        return jsonify(result), 200
+        return jsonify(final_data), 200
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-# ── CASCADE: delete user account (predictions cascade automatically) ───────
 @app.route("/api/users/<int:user_id>", methods=["DELETE"])
 def delete_user(user_id):
     try:
@@ -688,8 +638,6 @@ def delete_user(user_id):
         if not cur.fetchone():
             cur.close(); conn.close()
             return jsonify({"error": "User not found"}), 404
-        # The FK constraint prediction.user_id → users(user_id) ON DELETE CASCADE
-        # automatically deletes all predictions belonging to this user.
         cur.execute("DELETE FROM users WHERE user_id = %s", (user_id,))
         conn.commit()
         cur.close(); conn.close()
