@@ -54,21 +54,37 @@ function ViewPredictions({ currentUser }) {
 
   return (
     <section className="page-section">
+
+      {/* ── Summary stats card ── */}
+      {summary && (
+        <article className="content-card">
+          <p className="section-kicker">My Stats</p>
+          <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+            <div>
+              <p className="panel-label">Predictions</p>
+              <p className="panel-value">{summary.prediction_count}</p>
+            </div>
+            <div>
+              <p className="panel-label">Points Earned</p>
+              <p className="panel-value">{summary.total_earned} pts</p>
+            </div>
+            <div>
+              <p className="panel-label">Avg Score</p>
+              <p className="panel-value">
+                {summary.avg_points !== null ? `${summary.avg_points} pts` : '—'}
+              </p>
+            </div>
+          </div>
+        </article>
+      )}
+
+      {/* ── Predictions table card ── */}
       <article className="content-card">
         <div className="card-heading">
           <div>
             <p className="section-kicker">My Predictions</p>
             <h3>{currentUser?.username || 'Your'} Predictions</h3>
           </div>
-          {summary && (
-            <div className="group-stats">
-              <span>{summary.prediction_count} prediction{summary.prediction_count !== 1 ? 's' : ''}</span>
-              <span>{summary.total_earned} pts earned</span>
-              {summary.avg_points !== null && (
-                <span>avg {summary.avg_points} pts</span>
-              )}
-            </div>
-          )}
         </div>
 
         {loading && <p className="card-copy">Loading predictions...</p>}
