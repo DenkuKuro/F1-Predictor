@@ -4,8 +4,6 @@ function ViewPredictions() {
   const [predictions, setPredictions] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [calcStatus, setCalcStatus] = useState('')
-  const [calculating, setCalculating] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
 
   const loadPredictions = async () => {
@@ -26,22 +24,6 @@ function ViewPredictions() {
 
   useEffect(() => { loadPredictions() }, [])
 
-  const handleCalculate = async () => {
-    setCalculating(true)
-    setCalcStatus('')
-    try {
-      const response = await fetch('/api/calculate-scores/pending', { method: 'POST' })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Calculation failed.')
-      setCalcStatus(data.message)
-      await loadPredictions()
-    } catch (err) {
-      setCalcStatus(err.message || 'Calculation failed.')
-    } finally {
-      setCalculating(false)
-    }
-  }
-
   const handleDelete = async (predId) => {
     setDeletingId(predId)
     try {
@@ -56,9 +38,6 @@ function ViewPredictions() {
     }
   }
 
-  const isError = (msg) =>
-    msg.toLowerCase().includes('fail') || msg.toLowerCase().includes('error')
-
   return (
     <section className="page-section">
       <article className="content-card">
@@ -67,20 +46,7 @@ function ViewPredictions() {
             <p className="section-kicker">View Predictions</p>
             <h3>Prediction records</h3>
           </div>
-          <button
-            className="primary-button"
-            onClick={handleCalculate}
-            disabled={calculating}
-          >
-            {calculating ? 'Calculating…' : 'Calculate Score'}
-          </button>
         </div>
-
-        {calcStatus && (
-          <p className={`feedback-message ${isError(calcStatus) ? 'error' : 'success'}`}>
-            {calcStatus}
-          </p>
-        )}
 
         {loading && <p className="card-copy">Loading predictions...</p>}
         {error && <p className="feedback-message error">{error}</p>}

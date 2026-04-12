@@ -13,10 +13,10 @@ const PROTECTED_PAGES = new Set(['results', 'leaderboard', 'makePrediction', 'vi
 
 const navigationItems = [
   { id: 'aboutRace', label: 'About The Race' },
-  { id: 'results', label: 'See Results' },
-  { id: 'leaderboard', label: 'Leaderboard' },
+  { id: 'leaderboard', label: 'Global Leaderboard' },
   { id: 'makePrediction', label: 'Make Prediction' },
   { id: 'viewPredictions', label: 'View Predictions' },
+  { id: 'results', label: 'View Results' },
   { id: 'login', label: 'Login' },
   { id: 'signup', label: 'Sign Up' },
 ]
@@ -46,7 +46,9 @@ function App() {
   const handleLogout = () => {
     localStorage.removeItem('user_id')
     localStorage.removeItem('username')
+    localStorage.removeItem('raceSelected')
     setCurrentUser(null)
+    setSelectedRace(null)
     setActivePage('landing')
   }
 
@@ -80,7 +82,7 @@ function App() {
         return <SignUp />
       case 'leaderboard':
       default:
-        return <Leaderboard />
+        return <Leaderboard currentUser={currentUser} />
     }
   }
 
@@ -104,7 +106,6 @@ function App() {
             value={selectedRace ? selectedRace.race_id : ''}
             onChange={(e) => {
               const race = recentRaces.find((r) => String(r.race_id) === e.target.value)
-              localStorage.setItem('raceSelected', JSON.stringify(race));
               setSelectedRace(race ?? null)
             }}
           >
@@ -144,7 +145,6 @@ function App() {
       <main className="main-content">
         <header className="topbar">
           <div>
-            <p className="eyebrow">Formula 1 Prediction Database Project</p>
             {pageTitle && <h2 className="page-title">{pageTitle}</h2>}
           </div>
         </header>
