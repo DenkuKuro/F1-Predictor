@@ -19,13 +19,16 @@ function Leaderboard({ currentUser }) {
       .catch(() => {})
   }, [])
 
-  // Fetch overall aggregation stats
-  useEffect(() => {
-    fetch('/api/stats/prediction-summary')
+  const fetchStats = (raceIds) => {
+    const url = raceIds.length > 0
+      ? `/api/stats/prediction-summary?race_ids=${raceIds.join(',')}`
+      : '/api/stats/prediction-summary'
+
+    fetch(url)
       .then((r) => r.json())
       .then((data) => setStats(data))
       .catch(() => {})
-  }, [])
+  }
 
   const fetchLeaderboard = (raceIds) => {
     const url = raceIds.length > 0
@@ -49,7 +52,10 @@ function Leaderboard({ currentUser }) {
       })
   }
 
-  useEffect(() => { fetchLeaderboard([]) }, [])
+  useEffect(() => {
+    fetchLeaderboard([])
+    fetchStats([])
+  }, [])
 
   const toggleRace = (raceId) => {
     const next = selectedRaceIds.includes(raceId)
@@ -57,11 +63,13 @@ function Leaderboard({ currentUser }) {
       : [...selectedRaceIds, raceId]
     setSelectedRaceIds(next)
     fetchLeaderboard(next)
+    fetchStats(next)
   }
 
   const clearFilter = () => {
     setSelectedRaceIds([])
     fetchLeaderboard([])
+    fetchStats([])
   }
 
   return (
@@ -70,15 +78,13 @@ function Leaderboard({ currentUser }) {
       {/* ── Aggregation stats card ── */}
       {stats && stats.total_predictions > 0 && (
         <article className="content-card">
-          <p className="section-kicker">Overall Stats</p>
-          <div className="stats-grid">
+          <p className="section-kicker">
+            {selectedRaceIds.length > 0 ? 'Stats for Selected Races' : 'Overall Stats'}
+          </p>
+          <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
             <div>
               <p className="panel-label">Predictions</p>
               <p className="panel-value">{stats.total_predictions}</p>
-            </div>
-            <div>
-              <p className="panel-label">Active Players</p>
-              <p className="panel-value">{stats.total_users}</p>
             </div>
             <div>
               <p className="panel-label">Highest Score</p>

@@ -104,7 +104,15 @@ def get_leaderboard():
     try:
         conn = get_db_conn()
         cur = conn.cursor()
-        cur.execute("SELECT username, total_points FROM users ORDER BY total_points DESC NULLS LAST")
+        cur.execute("""
+            SELECT u.username, u.total_points
+            FROM users u
+            WHERE EXISTS (
+                SELECT 1 FROM prediction p
+                WHERE p.user_id = u.user_id AND p.points_earned >= 0
+            )
+            ORDER BY u.total_points DESC NULLS LAST
+        """)
         rows = cur.fetchall()
         cur.close(); conn.close()
         return jsonify([{"username": r[0], "total_points": r[1]} for r in rows]), 200
@@ -512,13 +520,13 @@ def get_leaderboard_division():
 
         placeholders = ", ".join(["%s"] * len(race_ids))
         sql = f"""
-            SELECT u.username, u.total_points
+            SELECT u.username, SUM(p.points_earned) AS total_points
             FROM users u
             JOIN prediction p ON u.user_id = p.user_id
-            WHERE p.race_id IN ({placeholders})
-            GROUP BY u.user_id, u.username, u.total_points
+            WHERE p.race_id IN ({placeholders}) AND p.points_earned >= 0
+            GROUP BY u.user_id, u.username
             HAVING COUNT(DISTINCT p.race_id) = %s
-            ORDER BY u.total_points DESC
+            ORDER BY total_points DESC
         """
         cur.execute(sql, race_ids + [len(race_ids)])
         rows = cur.fetchall()
@@ -530,31 +538,51 @@ def get_leaderboard_division():
 
 @app.route("/api/stats/prediction-summary", methods=["GET"])
 def get_prediction_summary():
+    race_ids_param = request.args.get("race_ids", "").strip()
+
     try:
         conn = get_db_conn()
         cur = conn.cursor()
-        cur.execute("""
-            SELECT COUNT(*)                          AS total_predictions,
-                   COUNT(DISTINCT user_id)           AS total_users,
-                   MIN(points_earned)                AS min_points,
-                   MAX(points_earned)                AS max_points,
-                   ROUND(AVG(points_earned), 1)      AS avg_points
-            FROM prediction
-            WHERE points_earned >= 0
-        """)
+
+        if race_ids_param:
+            try:
+                race_ids = [int(r) for r in race_ids_param.split(",") if r.strip()]
+            except ValueError:
+                return jsonify({"error": "Invalid race_ids parameter"}), 400
+
+            if race_ids:
+                placeholders = ", ".join(["%s"] * len(race_ids))
+                cur.execute(f"""
+                    SELECT COUNT(*)                          AS total_predictions,
+                           MAX(points_earned)                AS max_points,
+                           ROUND(AVG(points_earned), 1)      AS avg_points
+                    FROM prediction
+                    WHERE points_earned >= 0 AND race_id IN ({placeholders})
+                """, race_ids)
+            else:
+                cur.execute("""
+                    SELECT COUNT(*), MAX(points_earned), ROUND(AVG(points_earned), 1)
+                    FROM prediction WHERE points_earned >= 0
+                """)
+        else:
+            cur.execute("""
+                SELECT COUNT(*)                          AS total_predictions,
+                       MAX(points_earned)                AS max_points,
+                       ROUND(AVG(points_earned), 1)      AS avg_points
+                FROM prediction
+                WHERE points_earned >= 0
+            """)
+
         row = cur.fetchone()
         cur.close(); conn.close()
 
         if not row or row[0] == 0:
-            return jsonify({"total_predictions": 0, "total_users": 0,
-                            "min_points": 0, "max_points": 0, "avg_points": 0.0}), 200
+            return jsonify({"total_predictions": 0, "max_points": 0, "avg_points": 0.0}), 200
 
         return jsonify({
             "total_predictions": int(row[0]),
-            "total_users":       int(row[1]),
-            "min_points":        int(row[2]) if row[2] is not None else 0,
-            "max_points":        int(row[3]) if row[3] is not None else 0,
-            "avg_points":        float(row[4]) if row[4] is not None else 0.0,
+            "max_points":        int(row[1]) if row[1] is not None else 0,
+            "avg_points":        float(row[2]) if row[2] is not None else 0.0,
         }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
