@@ -1,10 +1,10 @@
 import os
-from supabase import create_client, Client
+import psycopg2
 from dotenv import load_dotenv
 
 load_dotenv()
 
-SUPABASE_URL: str = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY: str = os.environ.get("SUPABASE_KEY")
+DATABASE_URL: str = os.environ.get("DATABASE_URL")
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+def get_db_conn():
+    return psycopg2.connect(DATABASE_URL)

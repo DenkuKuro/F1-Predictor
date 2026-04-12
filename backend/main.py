@@ -1,9 +1,9 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from database import supabase
-import openf1
-import random
+from database import get_db_conn
 import jolpica
+import random
+from collections import defaultdict
 
 app = Flask(__name__)
 CORS(app)
@@ -19,16 +19,24 @@ def get_status():
 @app.route('/api/drivers', methods=['GET'])
 def get_drivers():
     try:
-        response = supabase.table("driver").select("driver_id, first_name, last_name, team_id").order("driver_id").execute()
-        return jsonify(response.data), 200
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT driver_id, first_name, last_name, team_id FROM driver ORDER BY driver_id")
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return jsonify([{"driver_id": r[0], "first_name": r[1], "last_name": r[2], "team_id": r[3]} for r in rows]), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/races', methods=['GET'])
 def get_races():
     try:
-        response = supabase.table("race").select("race_id, location, race_date, season_year").order("race_id").execute()
-        return jsonify(response.data), 200
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT race_id, location, race_date, season_year FROM race ORDER BY race_id")
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return jsonify([{"race_id": r[0], "location": r[1], "race_date": str(r[2]), "season_year": r[3]} for r in rows]), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -38,17 +46,28 @@ def get_race_info():
     if not race_id:
         return jsonify({"error": "race_id query param is required"}), 400
     try:
-        race_row = supabase.table("race").select("race_id, location, race_date, season_year").eq("race_id", race_id).execute().data
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT race_id, location, race_date, season_year FROM race WHERE race_id = %s", (race_id,))
+        race_row = cur.fetchone()
         if not race_row:
+            cur.close(); conn.close()
             return jsonify({"error": "Race not found"}), 404
-        race = race_row[0]
 
-        season_races = supabase.table("race").select("race_id").eq("season_year", race["season_year"]).order("race_date").execute().data
-        round_num = next((i + 1 for i, r in enumerate(season_races) if r["race_id"] == race["race_id"]), None)
+        race = {"race_id": race_row[0], "location": race_row[1], "race_date": race_row[2], "season_year": race_row[3]}
 
-        drivers = supabase.table("driver").select("driver_id, first_name, last_name, team_id").order("last_name").execute().data
-        teams = supabase.table("team").select("team_id, team_name").execute().data
-        team_map = {t["team_id"]: t["team_name"] for t in teams}
+        cur.execute("SELECT race_id FROM race WHERE season_year = %s ORDER BY race_date", (race["season_year"],))
+        season_race_ids = [r[0] for r in cur.fetchall()]
+        round_num = next((i + 1 for i, rid in enumerate(season_race_ids) if rid == race["race_id"]), None)
+
+        cur.execute("""
+            SELECT d.driver_id, d.first_name, d.last_name, t.team_name
+            FROM driver d
+            LEFT JOIN team t ON d.team_id = t.team_id
+            ORDER BY d.last_name
+        """)
+        driver_rows = cur.fetchall()
+        cur.close(); conn.close()
 
         return jsonify({
             "details": {
@@ -56,16 +75,11 @@ def get_race_info():
                 "season": race["season_year"],
                 "round": round_num,
                 "location": race["location"],
-                "date": race["race_date"],
+                "date": str(race["race_date"]),
             },
             "entry_list": [
-                {
-                    "driver_id": d["driver_id"],
-                    "first_name": d["first_name"],
-                    "last_name": d["last_name"],
-                    "team_name": team_map.get(d["team_id"], "Unknown"),
-                }
-                for d in drivers
+                {"driver_id": d[0], "first_name": d[1], "last_name": d[2], "team_name": d[3] or "Unknown"}
+                for d in driver_rows
             ]
         }), 200
     except Exception as e:
@@ -74,59 +88,78 @@ def get_race_info():
 @app.route('/api/recent-races', methods=['GET'])
 def get_recent_races():
     try:
-        response = supabase.table("race").select("race_id, location, race_date, season_year").order("race_date", desc=True).limit(10).execute()
-        races = [
-            {
-                "race_id": row["race_id"],
-                "season": row["season_year"],
-                "name": row["location"],
-                "location": row["location"],
-                "date": row["race_date"],
-            }
-            for row in response.data
-        ]
-        return jsonify(races), 200
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT race_id, location, race_date, season_year FROM race ORDER BY race_date DESC LIMIT 10")
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return jsonify([{
+            "race_id": r[0], "season": r[3], "name": r[1], "location": r[1], "date": str(r[2]),
+        } for r in rows]), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/leaderboard', methods=['GET'])
 def get_leaderboard():
     try:
-        response = supabase.table("users").select("username, total_points").order("total_points", desc=True).execute()
-        return jsonify(response.data), 200
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT username, total_points FROM users ORDER BY total_points DESC NULLS LAST")
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return jsonify([{"username": r[0], "total_points": r[1]} for r in rows]), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/predictions', methods=['GET'])
 def get_predictions():
     try:
-        preds = supabase.table("prediction").select("pred_id, race_id, p1_pick, p2_pick, p3_pick, safety_car_prediction, points_earned").order("pred_id").execute().data
-        races = supabase.table("race").select("race_id, location, race_date").execute().data
-        race_map = {r["race_id"]: f"{r['location']} — {r['race_date']}" for r in races}
-        drivers = supabase.table("driver").select("driver_id, first_name, last_name").execute().data
-        driver_map = {d["driver_id"]: f"{d['first_name']} {d['last_name']}" for d in drivers}
-
-        enriched = [
-            {
-                "pred_id": p["pred_id"],
-                "race_name": race_map.get(p["race_id"], f"Race #{p['race_id']}"),
-                "p1_pick": driver_map.get(p["p1_pick"], f"Driver #{p['p1_pick']}"),
-                "p2_pick": driver_map.get(p["p2_pick"], f"Driver #{p['p2_pick']}"),
-                "p3_pick": driver_map.get(p["p3_pick"], f"Driver #{p['p3_pick']}"),
-                "safety_car_prediction": p["safety_car_prediction"],
-                "points_earned": p["points_earned"],
-            }
-            for p in preds
-        ]
-        return jsonify(enriched), 200
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT p.pred_id,
+                   r.location || ' — ' || r.race_date AS race_name,
+                   d1.first_name || ' ' || d1.last_name AS p1_pick,
+                   d2.first_name || ' ' || d2.last_name AS p2_pick,
+                   d3.first_name || ' ' || d3.last_name AS p3_pick,
+                   p.safety_car_prediction,
+                   p.points_earned
+            FROM prediction p
+            JOIN race   r  ON p.race_id = r.race_id
+            JOIN driver d1 ON p.p1_pick = d1.driver_id
+            JOIN driver d2 ON p.p2_pick = d2.driver_id
+            JOIN driver d3 ON p.p3_pick = d3.driver_id
+            ORDER BY p.pred_id
+        """)
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return jsonify([{
+            "pred_id": r[0], "race_name": r[1],
+            "p1_pick": r[2], "p2_pick": r[3], "p3_pick": r[4],
+            "safety_car_prediction": r[5], "points_earned": r[6],
+        } for r in rows]), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/user_predictions/<user_id>', methods=['GET'])
 def get_user_predictions(user_id):
     try:
-        response = supabase.table("prediction").select("pred_id, user_id, race_id, p1_pick, p2_pick, p3_pick, safety_car_prediction, points_earned").eq("user_id", user_id).order("pred_id").execute()
-        return jsonify(response.data), 200
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT pred_id, user_id, race_id, p1_pick, p2_pick, p3_pick,
+                   safety_car_prediction, points_earned
+            FROM prediction
+            WHERE user_id = %s
+            ORDER BY pred_id
+        """, (user_id,))
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return jsonify([{
+            "pred_id": r[0], "user_id": r[1], "race_id": r[2],
+            "p1_pick": r[3], "p2_pick": r[4], "p3_pick": r[5],
+            "safety_car_prediction": r[6], "points_earned": r[7],
+        } for r in rows]), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -148,21 +181,22 @@ def post_prediction():
         return jsonify({"error": "P1, P2, and P3 picks must all be different"}), 400
 
     try:
-        existing = supabase.table("prediction").select("pred_id").eq("user_id", user_id).eq("race_id", race_id).execute().data
-        if existing:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT pred_id FROM prediction WHERE user_id = %s AND race_id = %s", (user_id, race_id))
+        if cur.fetchone():
+            cur.close(); conn.close()
             return jsonify({"error": "You have already submitted a prediction for this race."}), 409
 
-        response = supabase.table("prediction").insert({
-            "user_id": user_id,
-            "race_id": race_id,
-            "p1_pick": p1_pick,
-            "p2_pick": p2_pick,
-            "p3_pick": p3_pick,
-            "safety_car_prediction": safety_car_prediction,
-            "points_earned": -1
-        }).execute()
-
-        return jsonify({"message": "Prediction inserted successfully", "data": response.data}), 201
+        cur.execute("""
+            INSERT INTO prediction (user_id, race_id, p1_pick, p2_pick, p3_pick, safety_car_prediction, points_earned)
+            VALUES (%s, %s, %s, %s, %s, %s, -1)
+            RETURNING pred_id
+        """, (user_id, race_id, p1_pick, p2_pick, p3_pick, safety_car_prediction))
+        new_id = cur.fetchone()[0]
+        conn.commit()
+        cur.close(); conn.close()
+        return jsonify({"message": "Prediction inserted successfully", "data": [{"pred_id": new_id}]}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -173,8 +207,13 @@ def insert_team():
     if not team_name:
         return jsonify({"error": "team_name is required"}), 400
     try:
-        response = supabase.table("team").insert({"team_name": team_name}).execute()
-        return jsonify({"message": "Team inserted", "data": response.data}), 201
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO team (team_name) VALUES (%s) RETURNING team_id", (team_name,))
+        new_id = cur.fetchone()[0]
+        conn.commit()
+        cur.close(); conn.close()
+        return jsonify({"message": "Team inserted", "data": [{"team_id": new_id}]}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -183,11 +222,23 @@ def signup():
     content = request.json or {}
     email = content.get('email', '').strip().lower()
     try:
-        existing = supabase.table("users").select("email", count="exact").eq("email", email).execute()
-        if existing.count > 0:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM users WHERE email = %s", (email,))
+        if cur.fetchone()[0] > 0:
+            cur.close(); conn.close()
             return jsonify({"message": "User already exists"}), 409
-        response = supabase.table("users").insert(content).execute()
-        return jsonify({"message": "Signed up successfully!", "data": response.data}), 201
+
+        username = content.get('username', '').strip()
+        password = content.get('password', '').strip()
+        cur.execute(
+            "INSERT INTO users (email, username, password) VALUES (%s, %s, %s) RETURNING user_id, username",
+            (email, username, password)
+        )
+        row = cur.fetchone()
+        conn.commit()
+        cur.close(); conn.close()
+        return jsonify({"message": "Signed up successfully!", "data": [{"user_id": row[0], "username": row[1]}]}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -197,31 +248,14 @@ def login():
     email = content.get("email", "").lower()
     password = content.get("password", "").lower()
     try:
-        response = supabase.table("users").select("user_id, username").eq("email", email).eq("password", password).execute()
-        if response.data:
-            return jsonify({"message": "Logged in successfully!", "body": response.data[0]}), 201
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT user_id, username FROM users WHERE email = %s AND password = %s", (email, password))
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if row:
+            return jsonify({"message": "Logged in successfully!", "body": {"user_id": row[0], "username": row[1]}}), 201
         return jsonify({"error": "No such user exists"}), 500
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/live-race", methods=["GET"])
-def live_race():
-    try:
-        session = openf1.get_latest_session()
-        if not session:
-            return jsonify({"error": "No active session found"}), 404
-
-        session_key = session["session_key"]
-        positions = openf1.get_driver_positions(session_key)
-        podium = sorted([p for p in positions if p.get("position") in [1, 2, 3]], key=lambda x: x["position"])
-
-        return jsonify({
-            "session_key": session_key,
-            "session_name": session.get("session_name"),
-            "race_finished": openf1.get_race_finished(session),
-            "safety_car": openf1.get_safety_car_status(session_key),
-            "podium": podium,
-        }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -248,43 +282,63 @@ def get_race_results():
         return jsonify({"error": "id and race query params are required"}), 400
 
     try:
-        all_drivers = supabase.table("driver").select("driver_id, first_name, last_name").execute().data
+        conn = get_db_conn()
+        cur = conn.cursor()
+
+        cur.execute("SELECT driver_id, first_name, last_name FROM driver")
+        all_drivers = [{"driver_id": r[0], "first_name": r[1], "last_name": r[2]} for r in cur.fetchall()]
         driver_map = {d["driver_id"]: f"{d['first_name']} {d['last_name']}" for d in all_drivers}
 
         # Use stored race result if it exists, otherwise generate and save one
-        result_row = supabase.table("race_result").select("p1_driver, p2_driver, p3_driver, safety_car_result").eq("race_id", race_id).execute().data
+        cur.execute(
+            "SELECT p1_driver, p2_driver, p3_driver, safety_car_result FROM race_result WHERE race_id = %s",
+            (race_id,)
+        )
+        result_row = cur.fetchone()
         if result_row:
-            p1_id = result_row[0]["p1_driver"]
-            p2_id = result_row[0]["p2_driver"]
-            p3_id = result_row[0]["p3_driver"]
-            actual_safety_car = result_row[0]["safety_car_result"]
+            p1_id, p2_id, p3_id, actual_safety_car = result_row
         else:
             p1, p2, p3 = random.sample(all_drivers, 3)
             actual_safety_car = random.choice([True, False])
             p1_id, p2_id, p3_id = p1["driver_id"], p2["driver_id"], p3["driver_id"]
-            supabase.table("race_result").insert({
-                "race_id": race_id,
-                "p1_driver": p1_id,
-                "p2_driver": p2_id,
-                "p3_driver": p3_id,
-                "safety_car_result": actual_safety_car
-            }).execute()
+            cur.execute("""
+                INSERT INTO race_result (race_id, p1_driver, p2_driver, p3_driver, safety_car_result)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (race_id, p1_id, p2_id, p3_id, actual_safety_car))
+            conn.commit()
 
-        pred_rows = supabase.table("prediction").select("pred_id, p1_pick, p2_pick, p3_pick, safety_car_prediction, points_earned").eq("user_id", current_user_id).eq("race_id", race_id).execute().data
-        if not pred_rows:
+        cur.execute("""
+            SELECT pred_id, p1_pick, p2_pick, p3_pick, safety_car_prediction, points_earned
+            FROM prediction
+            WHERE user_id = %s AND race_id = %s
+        """, (current_user_id, race_id))
+        pred_row = cur.fetchone()
+        if not pred_row:
+            cur.close(); conn.close()
             return jsonify({"error": "You have not submitted a prediction for this race."}), 404
 
-        pred = pred_rows[0]
-        username_row = supabase.table("users").select("username, total_points").eq("user_id", current_user_id).execute().data
-        username = username_row[0]["username"] if username_row else "You"
+        pred = {
+            "pred_id": pred_row[0], "p1_pick": pred_row[1], "p2_pick": pred_row[2],
+            "p3_pick": pred_row[3], "safety_car_prediction": pred_row[4], "points_earned": pred_row[5],
+        }
+
+        cur.execute("SELECT username, total_points FROM users WHERE user_id = %s", (current_user_id,))
+        user_row = cur.fetchone()
+        username = user_row[0] if user_row else "You"
 
         if pred["points_earned"] == -1:
-            user_score = score_prediction(pred["p1_pick"], pred["p2_pick"], pred["p3_pick"], pred["safety_car_prediction"], p1_id, p2_id, p3_id, actual_safety_car)
-            supabase.table("prediction").update({"points_earned": user_score}).eq("pred_id", pred["pred_id"]).execute()
-            current_total = (username_row[0]["total_points"] or 0) if username_row else 0
-            supabase.table("users").update({"total_points": current_total + user_score}).eq("user_id", current_user_id).execute()
+            user_score = score_prediction(
+                pred["p1_pick"], pred["p2_pick"], pred["p3_pick"],
+                pred["safety_car_prediction"], p1_id, p2_id, p3_id, actual_safety_car
+            )
+            cur.execute("UPDATE prediction SET points_earned = %s WHERE pred_id = %s", (user_score, pred["pred_id"]))
+            current_total = (user_row[1] or 0) if user_row else 0
+            cur.execute("UPDATE users SET total_points = %s WHERE user_id = %s", (current_total + user_score, current_user_id))
+            conn.commit()
         else:
             user_score = pred["points_earned"]
+
+        cur.close(); conn.close()
 
         user_result = {
             "username": username,
@@ -292,9 +346,9 @@ def get_race_results():
                 "p1": driver_map.get(pred["p1_pick"]),
                 "p2": driver_map.get(pred["p2_pick"]),
                 "p3": driver_map.get(pred["p3_pick"]),
-                "safety_car": pred["safety_car_prediction"]
+                "safety_car": pred["safety_car_prediction"],
             },
-            "score": user_score
+            "score": user_score,
         }
 
         bot_names = ["RaceFan99", "SpeedDemon", "PitWall", "TurboGuy", "ApexHunter", "GridWatcher", "SlipstreamKing"]
@@ -309,9 +363,9 @@ def get_race_results():
                     "p1": f"{picks[0]['first_name']} {picks[0]['last_name']}",
                     "p2": f"{picks[1]['first_name']} {picks[1]['last_name']}",
                     "p3": f"{picks[2]['first_name']} {picks[2]['last_name']}",
-                    "safety_car": bot_sc
+                    "safety_car": bot_sc,
                 },
-                "score": bot_score
+                "score": bot_score,
             })
 
         leaderboard.sort(key=lambda x: x["score"], reverse=True)
@@ -321,63 +375,12 @@ def get_race_results():
                 "p1": driver_map.get(p1_id),
                 "p2": driver_map.get(p2_id),
                 "p3": driver_map.get(p3_id),
-                "safety_car": actual_safety_car
+                "safety_car": actual_safety_car,
             },
             "user_result": user_result,
-            "leaderboard": leaderboard
+            "leaderboard": leaderboard,
         }), 200
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/calculate-scores", methods=["POST"])
-def calculate_scores():
-    try:
-        session = openf1.get_latest_session()
-        if not session:
-            return jsonify({"error": "No session found"}), 404
-        if not openf1.get_race_finished(session):
-            return jsonify({"error": "Race has not finished yet"}), 400
-
-        session_key = session["session_key"]
-        positions = openf1.get_driver_positions(session_key)
-        safety_car_result = openf1.get_safety_car_status(session_key)
-
-        podium_map = {p["driver_number"]: p["position"] for p in positions if p.get("position") in [1, 2, 3]}
-        f1_drivers = openf1.get_session_drivers(session_key)
-        f1_last_names = {d["driver_number"]: d["full_name"].split()[-1].upper() for d in f1_drivers}
-        db_drivers = supabase.table("driver").select("driver_id, last_name").execute().data
-        db_last_name_map = {d["last_name"].upper(): d["driver_id"] for d in db_drivers}
-
-        def resolve_driver_id(position):
-            for num, pos in podium_map.items():
-                if pos == position:
-                    return db_last_name_map.get(f1_last_names.get(num))
-            return None
-
-        p1_id = resolve_driver_id(1)
-        p2_id = resolve_driver_id(2)
-        p3_id = resolve_driver_id(3)
-
-        if not p1_id or not p2_id or not p3_id:
-            return jsonify({"error": "Could not match all podium drivers to DB"}), 422
-
-        session_date = session.get("date_start", "")[:10]
-        race_row = supabase.table("race").select("race_id").eq("race_date", session_date).execute().data
-        if not race_row:
-            return jsonify({"error": f"No race found in DB for date {session_date}"}), 404
-        race_id = race_row[0]["race_id"]
-
-        predictions = supabase.table("prediction").select("pred_id, user_id, p1_pick, p2_pick, p3_pick, safety_car_prediction").eq("race_id", race_id).execute().data
-        for pred in predictions:
-            points = score_prediction(pred["p1_pick"], pred["p2_pick"], pred["p3_pick"], pred["safety_car_prediction"], p1_id, p2_id, p3_id, safety_car_result)
-            supabase.table("prediction").update({"points_earned": points}).eq("pred_id", pred["pred_id"]).execute()
-            user_row = supabase.table("users").select("total_points").eq("user_id", pred["user_id"]).execute().data
-            if user_row:
-                supabase.table("users").update({"total_points": (user_row[0]["total_points"] or 0) + points}).eq("user_id", pred["user_id"]).execute()
-
-        return jsonify({"message": f"Scores calculated for race_id {race_id}", "predictions_scored": len(predictions)}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -388,24 +391,32 @@ def calculate_scores_history():
     race_id = content.get("race_id")
     if not race_id:
         return jsonify({"error": "race_id is required"}), 400
-
     try:
-        result_row = supabase.table("race_result").select("p1_driver, p2_driver, p3_driver").eq("race_id", race_id).execute().data
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT p1_driver, p2_driver, p3_driver FROM race_result WHERE race_id = %s", (race_id,))
+        result_row = cur.fetchone()
         if not result_row:
+            cur.close(); conn.close()
             return jsonify({"error": f"No stored result found for race_id {race_id}"}), 404
 
-        p1_id = result_row[0]["p1_driver"]
-        p2_id = result_row[0]["p2_driver"]
-        p3_id = result_row[0]["p3_driver"]
+        p1_id, p2_id, p3_id = result_row
+        cur.execute("""
+            SELECT pred_id, user_id, p1_pick, p2_pick, p3_pick, safety_car_prediction
+            FROM prediction WHERE race_id = %s
+        """, (race_id,))
+        predictions = cur.fetchall()
 
-        predictions = supabase.table("prediction").select("pred_id, user_id, p1_pick, p2_pick, p3_pick, safety_car_prediction").eq("race_id", race_id).execute().data
-        for pred in predictions:
-            points = score_prediction(pred["p1_pick"], pred["p2_pick"], pred["p3_pick"], pred["safety_car_prediction"], p1_id, p2_id, p3_id, None)
-            supabase.table("prediction").update({"points_earned": points}).eq("pred_id", pred["pred_id"]).execute()
-            user_row = supabase.table("users").select("total_points").eq("user_id", pred["user_id"]).execute().data
+        for pred_id, user_id, p1_pick, p2_pick, p3_pick, sc in predictions:
+            points = score_prediction(p1_pick, p2_pick, p3_pick, sc, p1_id, p2_id, p3_id, None)
+            cur.execute("UPDATE prediction SET points_earned = %s WHERE pred_id = %s", (points, pred_id))
+            cur.execute("SELECT total_points FROM users WHERE user_id = %s", (user_id,))
+            user_row = cur.fetchone()
             if user_row:
-                supabase.table("users").update({"total_points": (user_row[0]["total_points"] or 0) + points}).eq("user_id", pred["user_id"]).execute()
+                cur.execute("UPDATE users SET total_points = %s WHERE user_id = %s", ((user_row[0] or 0) + points, user_id))
 
+        conn.commit()
+        cur.close(); conn.close()
         return jsonify({"message": f"Historical scores calculated for race_id {race_id}", "predictions_scored": len(predictions)}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -413,17 +424,26 @@ def calculate_scores_history():
 
 @app.route("/api/calculate-scores/pending", methods=["POST"])
 def calculate_scores_pending():
-    from collections import defaultdict
     try:
-        unscored = supabase.table("prediction").select("pred_id, user_id, race_id, p1_pick, p2_pick, p3_pick, safety_car_prediction").eq("points_earned", -1).execute().data
+        conn = get_db_conn()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT pred_id, user_id, race_id, p1_pick, p2_pick, p3_pick, safety_car_prediction
+            FROM prediction WHERE points_earned = -1
+        """)
+        unscored = cur.fetchall()
+
         if not unscored:
+            cur.close(); conn.close()
             return jsonify({"message": "No pending predictions to score.", "predictions_scored": 0}), 200
 
-        result_map = {r["race_id"]: r for r in supabase.table("race_result").select("race_id, p1_driver, p2_driver, p3_driver, safety_car_result").execute().data}
+        cur.execute("SELECT race_id, p1_driver, p2_driver, p3_driver, safety_car_result FROM race_result")
+        result_map = {r[0]: r for r in cur.fetchall()}
 
         by_race = defaultdict(list)
         for pred in unscored:
-            by_race[pred["race_id"]].append(pred)
+            by_race[pred[2]].append(pred)
 
         total_scored = 0
         races_no_result = []
@@ -433,19 +453,19 @@ def calculate_scores_pending():
             if not result:
                 races_no_result.append(race_id)
                 continue
-
-            p1_id = result["p1_driver"]
-            p2_id = result["p2_driver"]
-            p3_id = result["p3_driver"]
-            sc = result.get("safety_car_result")
-
+            _, p1_id, p2_id, p3_id, sc = result
             for pred in preds:
-                points = score_prediction(pred["p1_pick"], pred["p2_pick"], pred["p3_pick"], pred["safety_car_prediction"], p1_id, p2_id, p3_id, sc)
-                supabase.table("prediction").update({"points_earned": points}).eq("pred_id", pred["pred_id"]).execute()
-                user_row = supabase.table("users").select("total_points").eq("user_id", pred["user_id"]).execute().data
+                pred_id, user_id, _, p1_pick, p2_pick, p3_pick, pred_sc = pred
+                points = score_prediction(p1_pick, p2_pick, p3_pick, pred_sc, p1_id, p2_id, p3_id, sc)
+                cur.execute("UPDATE prediction SET points_earned = %s WHERE pred_id = %s", (points, pred_id))
+                cur.execute("SELECT total_points FROM users WHERE user_id = %s", (user_id,))
+                user_row = cur.fetchone()
                 if user_row:
-                    supabase.table("users").update({"total_points": (user_row[0]["total_points"] or 0) + points}).eq("user_id", pred["user_id"]).execute()
+                    cur.execute("UPDATE users SET total_points = %s WHERE user_id = %s", ((user_row[0] or 0) + points, user_id))
                 total_scored += 1
+
+        conn.commit()
+        cur.close(); conn.close()
 
         msg = f"Scored {total_scored} prediction(s)."
         if races_no_result:
@@ -458,23 +478,222 @@ def calculate_scores_pending():
 @app.route("/api/predictions/<int:pred_id>", methods=["DELETE"])
 def delete_prediction(pred_id):
     try:
-        pred_row = supabase.table("prediction").select("user_id, points_earned").eq("pred_id", pred_id).execute().data
-        if not pred_row:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT pred_id FROM prediction WHERE pred_id = %s", (pred_id,))
+        if not cur.fetchone():
+            cur.close(); conn.close()
             return jsonify({"error": "Prediction not found"}), 404
-
-        user_id = pred_row[0]["user_id"]
-        points_earned = pred_row[0]["points_earned"]
-
-        supabase.table("prediction").delete().eq("pred_id", pred_id).execute()
-
-        if points_earned > 0:
-            user_row = supabase.table("users").select("total_points").eq("user_id", user_id).execute().data
-            if user_row:
-                supabase.table("users").update({
-                    "total_points": max(0, (user_row[0]["total_points"] or 0) - points_earned)
-                }).eq("user_id", user_id).execute()
-
+        cur.execute("DELETE FROM prediction WHERE pred_id = %s", (pred_id,))
+        conn.commit()
+        cur.close(); conn.close()
+        # total_points is decremented automatically by the DB trigger
+        # (trg_subtract_points_on_delete — see schema_extras.sql)
         return jsonify({"message": "Prediction deleted."}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── DIVISION: leaderboard filtered by races ────────────────────────────────
+@app.route("/api/leaderboard/division", methods=["GET"])
+def get_leaderboard_division():
+    race_ids_param = request.args.get("race_ids", "").strip()
+
+    if not race_ids_param:
+        return get_leaderboard()
+
+    try:
+        race_ids = [int(r) for r in race_ids_param.split(",") if r.strip()]
+    except ValueError:
+        return jsonify({"error": "Invalid race_ids parameter"}), 400
+
+    if not race_ids:
+        return get_leaderboard()
+
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+
+        # Division query — users who have a prediction for EVERY selected race.
+        # Equivalent to: users U such that there is no selected race R for which
+        # U has no prediction.
+        placeholders = ", ".join(["%s"] * len(race_ids))
+        sql = f"""
+            SELECT u.username, u.total_points
+            FROM users u
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM (SELECT unnest(ARRAY[{placeholders}]::int[]) AS race_id) AS selected_races
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM prediction p
+                    WHERE p.user_id = u.user_id
+                      AND p.race_id = selected_races.race_id
+                )
+            )
+            ORDER BY u.total_points DESC NULLS LAST
+        """
+        cur.execute(sql, race_ids)
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return jsonify([{"username": r[0], "total_points": r[1]} for r in rows]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── AGGREGATION (no GROUP BY): overall prediction stats ───────────────────
+@app.route("/api/stats/prediction-summary", methods=["GET"])
+def get_prediction_summary():
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT COUNT(*)                          AS total_predictions,
+                   COUNT(DISTINCT user_id)           AS total_users,
+                   MIN(points_earned)                AS min_points,
+                   MAX(points_earned)                AS max_points,
+                   ROUND(AVG(points_earned), 1)      AS avg_points
+            FROM prediction
+            WHERE points_earned >= 0
+        """)
+        row = cur.fetchone()
+        cur.close(); conn.close()
+
+        if not row or row[0] == 0:
+            return jsonify({"total_predictions": 0, "total_users": 0,
+                            "min_points": 0, "max_points": 0, "avg_points": 0.0}), 200
+
+        return jsonify({
+            "total_predictions": int(row[0]),
+            "total_users":       int(row[1]),
+            "min_points":        int(row[2]) if row[2] is not None else 0,
+            "max_points":        int(row[3]) if row[3] is not None else 0,
+            "avg_points":        float(row[4]) if row[4] is not None else 0.0,
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── AGGREGATION WITH GROUP BY + JOIN: predictions grouped by user ──────────
+@app.route("/api/predictions/grouped", methods=["GET"])
+def get_predictions_grouped():
+    user_id = request.args.get("user_id")
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+
+        # GROUP BY query — aggregate stats per user (filtered to user_id if provided)
+        if user_id:
+            cur.execute("""
+                SELECT u.user_id,
+                       u.username,
+                       COUNT(p.pred_id)                                                          AS prediction_count,
+                       COALESCE(SUM(CASE WHEN p.points_earned >= 0 THEN p.points_earned END), 0) AS total_earned,
+                       ROUND(AVG(CASE WHEN p.points_earned >= 0 THEN p.points_earned END), 1)    AS avg_points
+                FROM users u
+                LEFT JOIN prediction p ON u.user_id = p.user_id
+                WHERE u.user_id = %s
+                GROUP BY u.user_id, u.username
+            """, (user_id,))
+        else:
+            cur.execute("""
+                SELECT u.user_id,
+                       u.username,
+                       COUNT(p.pred_id)                                                          AS prediction_count,
+                       COALESCE(SUM(CASE WHEN p.points_earned >= 0 THEN p.points_earned END), 0) AS total_earned,
+                       ROUND(AVG(CASE WHEN p.points_earned >= 0 THEN p.points_earned END), 1)    AS avg_points
+                FROM users u
+                LEFT JOIN prediction p ON u.user_id = p.user_id
+                GROUP BY u.user_id, u.username
+                ORDER BY total_earned DESC NULLS LAST
+            """)
+        user_rows = cur.fetchall()
+
+        # JOIN query — individual predictions with all names resolved via SQL JOINs
+        if user_id:
+            cur.execute("""
+                SELECT p.pred_id,
+                       p.user_id,
+                       r.location                                    AS race_name,
+                       r.race_date,
+                       d1.first_name || ' ' || d1.last_name         AS p1_driver,
+                       d2.first_name || ' ' || d2.last_name         AS p2_driver,
+                       d3.first_name || ' ' || d3.last_name         AS p3_driver,
+                       p.safety_car_prediction,
+                       p.points_earned
+                FROM prediction p
+                JOIN race   r  ON p.race_id  = r.race_id
+                JOIN driver d1 ON p.p1_pick  = d1.driver_id
+                JOIN driver d2 ON p.p2_pick  = d2.driver_id
+                JOIN driver d3 ON p.p3_pick  = d3.driver_id
+                WHERE p.user_id = %s
+                ORDER BY r.race_date
+            """, (user_id,))
+        else:
+            cur.execute("""
+                SELECT p.pred_id,
+                       p.user_id,
+                       r.location                                    AS race_name,
+                       r.race_date,
+                       d1.first_name || ' ' || d1.last_name         AS p1_driver,
+                       d2.first_name || ' ' || d2.last_name         AS p2_driver,
+                       d3.first_name || ' ' || d3.last_name         AS p3_driver,
+                       p.safety_car_prediction,
+                       p.points_earned
+                FROM prediction p
+                JOIN race   r  ON p.race_id  = r.race_id
+                JOIN driver d1 ON p.p1_pick  = d1.driver_id
+                JOIN driver d2 ON p.p2_pick  = d2.driver_id
+                JOIN driver d3 ON p.p3_pick  = d3.driver_id
+                ORDER BY p.user_id, r.race_date
+            """)
+        pred_rows = cur.fetchall()
+        cur.close(); conn.close()
+
+        preds_by_user = defaultdict(list)
+        for row in pred_rows:
+            preds_by_user[row[1]].append({
+                "pred_id":               row[0],
+                "race_name":             f"{row[2]} — {row[3]}",
+                "p1_pick":               row[4],
+                "p2_pick":               row[5],
+                "p3_pick":               row[6],
+                "safety_car_prediction": row[7],
+                "points_earned":         row[8],
+            })
+
+        result = []
+        for row in user_rows:
+            uid, username, pred_count, total_earned, avg_points = row
+            result.append({
+                "user_id":          uid,
+                "username":         username,
+                "prediction_count": int(pred_count),
+                "total_earned":     int(total_earned),
+                "avg_points":       float(avg_points) if avg_points is not None else None,
+                "predictions":      preds_by_user.get(uid, []),
+            })
+
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── CASCADE: delete user account (predictions cascade automatically) ───────
+@app.route("/api/users/<int:user_id>", methods=["DELETE"])
+def delete_user(user_id):
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT user_id FROM users WHERE user_id = %s", (user_id,))
+        if not cur.fetchone():
+            cur.close(); conn.close()
+            return jsonify({"error": "User not found"}), 404
+        # The FK constraint prediction.user_id → users(user_id) ON DELETE CASCADE
+        # automatically deletes all predictions belonging to this user.
+        cur.execute("DELETE FROM users WHERE user_id = %s", (user_id,))
+        conn.commit()
+        cur.close(); conn.close()
+        return jsonify({"message": "Account deleted."}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -482,20 +701,22 @@ def delete_prediction(pred_id):
 def insert_recent_races():
     try:
         recent = jolpica.get_recent_races(n=10)
-        existing_rows = supabase.table("race").select("race_date, season_year").execute().data
-        existing = {(row["race_date"], str(row["season_year"])) for row in existing_rows}
-
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT race_date, season_year FROM race")
+        existing = {(str(r[0]), str(r[1])) for r in cur.fetchall()}
         to_insert = [
-            {"location": race["location"], "race_date": race["date"], "season_year": race["season"]}
+            (race["location"], race["date"], race["season"])
             for race in recent
             if (race["date"], str(race["season"])) not in existing
         ]
-
         if to_insert:
-            supabase.table("race").insert(to_insert).execute()
+            cur.executemany("INSERT INTO race (location, race_date, season_year) VALUES (%s, %s, %s)", to_insert)
+            conn.commit()
             print(f"[seed] Inserted {len(to_insert)} new race(s).")
         else:
             print("[seed] No new races to insert.")
+        cur.close(); conn.close()
     except Exception as e:
         print(f"[seed] Warning: could not seed recent races — {e}")
 
@@ -503,44 +724,53 @@ def insert_recent_races():
 def insert_teams_and_drivers():
     try:
         entries = jolpica.get_current_season_drivers()
+        conn = get_db_conn()
+        cur = conn.cursor()
 
-        existing_teams = supabase.table("team").select("team_id, team_name").execute().data
-        existing_team_names = {row["team_name"] for row in existing_teams}
+        cur.execute("SELECT team_name FROM team")
+        existing_team_names = {r[0] for r in cur.fetchall()}
         new_team_names = {e["team_name"] for e in entries if e["team_name"]} - existing_team_names
 
         if new_team_names:
-            supabase.table("team").insert([{"team_name": name} for name in new_team_names]).execute()
+            cur.executemany("INSERT INTO team (team_name) VALUES (%s)", [(n,) for n in new_team_names])
+            conn.commit()
             print(f"[seed] Inserted {len(new_team_names)} new team(s): {', '.join(new_team_names)}")
         else:
             print("[seed] No new teams to insert.")
 
-        all_teams = supabase.table("team").select("team_id, team_name").execute().data
-        team_name_to_id = {row["team_name"]: row["team_id"] for row in all_teams}
+        cur.execute("SELECT team_id, team_name FROM team")
+        team_name_to_id = {r[1]: r[0] for r in cur.fetchall()}
 
-        existing_drivers = supabase.table("driver").select("first_name, last_name").execute().data
-        existing_driver_keys = {(row["first_name"], row["last_name"]) for row in existing_drivers}
+        cur.execute("SELECT first_name, last_name FROM driver")
+        existing_driver_keys = {(r[0], r[1]) for r in cur.fetchall()}
 
         to_insert_drivers = [
-            {"first_name": e["first_name"], "last_name": e["last_name"], "team_id": team_name_to_id.get(e["team_name"])}
+            (e["first_name"], e["last_name"], team_name_to_id.get(e["team_name"]))
             for e in entries
             if (e["first_name"], e["last_name"]) not in existing_driver_keys
         ]
-
         if to_insert_drivers:
-            supabase.table("driver").insert(to_insert_drivers).execute()
+            cur.executemany("INSERT INTO driver (first_name, last_name, team_id) VALUES (%s, %s, %s)", to_insert_drivers)
+            conn.commit()
             print(f"[seed] Inserted {len(to_insert_drivers)} new driver(s).")
         else:
             print("[seed] No new drivers to insert.")
+
+        cur.close(); conn.close()
     except Exception as e:
         print(f"[seed] Warning: could not seed teams/drivers — {e}")
 
 
 def insert_race_results():
     try:
-        all_races = supabase.table("race").select("race_id, race_date, season_year").execute().data
-        existing_ids = {row["race_id"] for row in supabase.table("race_result").select("race_id").execute().data}
-        db_drivers = supabase.table("driver").select("driver_id, last_name").execute().data
-        last_name_to_id = {d["last_name"].upper(): d["driver_id"] for d in db_drivers}
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT race_id, race_date, season_year FROM race")
+        all_races = [{"race_id": r[0], "race_date": str(r[1]), "season_year": r[2]} for r in cur.fetchall()]
+        cur.execute("SELECT race_id FROM race_result")
+        existing_ids = {r[0] for r in cur.fetchall()}
+        cur.execute("SELECT driver_id, last_name FROM driver")
+        last_name_to_id = {r[1].upper(): r[0] for r in cur.fetchall()}
 
         season_schedules = {}
         for race in all_races:
@@ -572,18 +802,17 @@ def insert_race_results():
                 if not p1_id or not p2_id or not p3_id:
                     print(f"[seed] race_id {race['race_id']}: could not match all podium drivers to DB — skipping.")
                     continue
-                supabase.table("race_result").insert({
-                    "race_id": race["race_id"],
-                    "p1_driver": p1_id,
-                    "p2_driver": p2_id,
-                    "p3_driver": p3_id,
-                    "safety_car_result": random.choice([True, False]),
-                }).execute()
+                cur.execute("""
+                    INSERT INTO race_result (race_id, p1_driver, p2_driver, p3_driver, safety_car_result)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (race["race_id"], p1_id, p2_id, p3_id, random.choice([True, False])))
+                conn.commit()
                 inserted += 1
             except Exception as e:
                 print(f"[seed] race_id {race['race_id']}: unexpected error — {e}")
                 continue
 
+        cur.close(); conn.close()
         print(f"[seed] Race results: inserted {inserted} new result(s).")
     except Exception as e:
         print(f"[seed] Warning: could not seed race results — {e}")

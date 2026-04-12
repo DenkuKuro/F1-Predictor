@@ -52,6 +52,17 @@ function App() {
     setActivePage('landing')
   }
 
+  const handleDeleteAccount = async () => {
+    if (!window.confirm('Delete your account? This will permanently remove all your predictions and cannot be undone.')) return
+    try {
+      const res = await fetch(`/api/users/${currentUser.user_id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error()
+      handleLogout()
+    } catch {
+      alert('Could not delete account. Please try again.')
+    }
+  }
+
   const handleNavClick = (id) => {
     if (PROTECTED_PAGES.has(id) && !currentUser) {
       setActivePage('login')
@@ -75,7 +86,7 @@ function App() {
       case 'makePrediction':
         return <MakePrediction selectedRace={selectedRace} currentUser={currentUser} />
       case 'viewPredictions':
-        return <ViewPredictions />
+        return <ViewPredictions currentUser={currentUser} />
       case 'login':
         return <LogIn onLogin={handleLogin} />
       case 'signup':
@@ -137,6 +148,9 @@ function App() {
             <p className="user-name">{currentUser.username}</p>
             <button className="logout-button" onClick={handleLogout}>
               Log Out
+            </button>
+            <button className="delete-account-button" onClick={handleDeleteAccount}>
+              Delete Account
             </button>
           </div>
         )}
