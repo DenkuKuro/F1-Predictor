@@ -7,9 +7,8 @@ function Landing({ onNavigate }) {
           <h3 className="hero-title">Predict the Podium. Climb the Ranks.</h3>
           <p className="hero-copy">
             F1 Predictor is a Formula 1 prediction game where you pick the top 3
-            finishing drivers before each race. Earn points for correct podium calls,
-            track your standing against other players, and follow live race data — all
-            in one place.
+            finishing drivers before each race. Earn points for correct podium calls and 
+            track your standing against other players.
           </p>
           <div className="hero-actions">
             <button className="primary-button" onClick={() => onNavigate('login')}>
@@ -45,17 +44,17 @@ function Landing({ onNavigate }) {
           <p className="section-kicker">Score</p>
           <h3>Earn Points</h3>
           <p className="card-copy">
-            Correct P1 earns 3 pts, P2 earns 2 pts, P3 earns 1 pt, and a correct
-            safety car call earns 1 bonus point.
+            Correct on position on the podium earns 100pts, on the podium but
+             wrong position earns 50pts, correct call on safety car earns 50 bonus points.
           </p>
         </article>
 
         <article className="content-card landing-feature">
           <p className="section-kicker">Compete</p>
-          <h3>Leaderboard</h3>
+          <h3>Global Leaderboard</h3>
           <p className="card-copy">
             See where you stand against all other players. Points accumulate across
-            every race in the season.
+            every race.
           </p>
         </article>
       </div>
