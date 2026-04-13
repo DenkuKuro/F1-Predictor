@@ -60,6 +60,7 @@ Fill in your Supabase credentials:
 ```
 SUPABASE_URL=your_supabase_project_url
 SUPABASE_KEY=your_supabase_anon_key
+DATABASE_URL=your_supabase_direct_connection_key
 ```
 
 Start the Flask server:
@@ -99,3 +100,9 @@ The frontend runs on `http://localhost:5173` and proxies API requests to the Fla
 1. For the sake of this project, users are only predicting on the 10 most recent Grand Prix weekends. (Since it is hard to test on live races).
 2. To make it seem more realistic, "View Predictions" generate dummy predictions but is NOT recorded on the database.
 3. Safety Cars results are not stored on the Jolpica API. Thus, Safety Car results had a 50% chance of being either yes or no when race results were importing.
+
+---
+
+## Bugs
+1. When a prediction is pending to be calculated, it's stored score is -1 as that is how we chose to set the "pending" state. Thus, in the "view predictions" tab, every pending race will appear to be -1 on the total score
+2. Within Global Leaderboard, when no filters are selected, the "highest score" is the highest score for ONE prediction out of all predictions made.
