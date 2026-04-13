@@ -552,13 +552,21 @@ def get_prediction_summary():
 
             if race_ids:
                 placeholders = ", ".join(["%s"] * len(race_ids))
+
                 cur.execute(f"""
-                    SELECT COUNT(*)                          AS total_predictions,
-                           MAX(points_earned)                AS max_points,
-                           ROUND(AVG(points_earned), 1)      AS avg_points
-                    FROM prediction
-                    WHERE points_earned >= 0 AND race_id IN ({placeholders})
-                """, race_ids)
+                    WITH qualifying_users AS (
+                        SELECT u.user_id, SUM(p.points_earned) AS user_total
+                        FROM users u
+                        JOIN prediction p ON u.user_id = p.user_id
+                        WHERE p.race_id IN ({placeholders}) AND p.points_earned >= 0
+                        GROUP BY u.user_id
+                        HAVING COUNT(DISTINCT p.race_id) = %s
+                    )
+                    SELECT COUNT(*)                           AS total_predictions,
+                           MAX(user_total)                    AS max_points,
+                           ROUND(AVG(user_total), 1)          AS avg_points
+                    FROM qualifying_users
+                """, race_ids + [len(race_ids)])
             else:
                 cur.execute("""
                     SELECT COUNT(*), MAX(points_earned), ROUND(AVG(points_earned), 1)
